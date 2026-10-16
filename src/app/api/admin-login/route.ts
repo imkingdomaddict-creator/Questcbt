@@ -1,19 +1,22 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(request: Request) {
-  const { password } = await request.json()
+const ADMIN_PASSWORD = 'QuestAdmin2024!';
 
-  if (password === 'QuestAdmin2024!') {
-    const response = NextResponse.json({ success: true })
-    response.cookies.set('quest_admin', 'ok', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24,
-      path: '/',
-    })
-    return response
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+  const { password } = body;
+
+  if (password !== ADMIN_PASSWORD) {
+    return NextResponse.json({ error: 'Invalid password.' }, { status: 401 });
   }
 
-  return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
+  const response = NextResponse.json({ success: true });
+  response.cookies.set('quest_admin', 'ok', {
+    httpOnly: true,
+    path: '/',
+    maxAge: 60 * 60 * 8,
+    sameSite: 'lax',
+  });
+
+  return response;
 }
