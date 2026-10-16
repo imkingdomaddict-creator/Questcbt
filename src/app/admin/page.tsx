@@ -393,7 +393,7 @@ function TestsTab() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
-  const [form, setForm] = useState({ title: '', class_id: '', subject_id: '', test_type: 'CA', duration_minutes: 30, total_questions: 20, start_time: '', end_time: '' })
+  const [form, setForm] = useState({ title: '', class_id: '', subject_id: '', test_type: 'CA', duration_minutes: 30, total_questions: 20, start_time: '', end_time: '', test_code: '' })
 
   async function load() {
     const { data: cd } = await supabase.from('classes').select('*').order('name')
@@ -411,10 +411,11 @@ function TestsTab() {
 
   async function createTest(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('')
-    const { error } = await supabase.from('tests').insert([{ ...form, is_active: false }])
+    if (!form.test_code.trim()) { setErr('Test code is required.'); return }
+    const { error } = await supabase.from('tests').insert([{ ...form, test_code: form.test_code.trim().toUpperCase(), is_active: false }])
     if (error) { setErr('Failed: ' + error.message); return }
     setMsg('Test created.')
-    setForm({ title: '', class_id: '', subject_id: '', test_type: 'CA', duration_minutes: 30, total_questions: 20, start_time: '', end_time: '' })
+    setForm({ title: '', class_id: '', subject_id: '', test_type: 'CA', duration_minutes: 30, total_questions: 20, start_time: '', end_time: '', test_code: '' })
     load()
   }
 
@@ -478,6 +479,12 @@ function TestsTab() {
             <input type="datetime-local" className="input" value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} />
           </div>
           <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code <span className="text-red-500">*</span></label>
+            <input type="text" className="input font-mono tracking-widest uppercase" placeholder="e.g. ENG2024"
+              value={form.test_code} onChange={e => setForm({ ...form, test_code: e.target.value.toUpperCase() })} required />
+            <p className="text-xs text-gray-400 mt-1">Give this code to students on exam day only. Keep it secret until then.</p>
+          </div>
+          <div className="sm:col-span-2">
             <button type="submit" className="btn-primary">Create Test</button>
           </div>
         </form>
@@ -489,6 +496,7 @@ function TestsTab() {
             <thead>
               <tr className="bg-quest-light text-quest-navy text-left">
                 <th className="px-3 py-2 font-semibold">Title</th>
+                <th className="px-3 py-2 font-semibold">Code</th>
                 <th className="px-3 py-2 font-semibold">Class</th>
                 <th className="px-3 py-2 font-semibold">Subject</th>
                 <th className="px-3 py-2 font-semibold">Type</th>
@@ -501,6 +509,7 @@ function TestsTab() {
               {tests.map((t: Test) => (
                 <tr key={t.id} className="border-b border-blue-50">
                   <td className="px-3 py-2 font-medium">{t.title}</td>
+                  <td className="px-3 py-2 font-mono font-bold text-quest-blue">{t.test_code || '—'}</td>
                   <td className="px-3 py-2">{getClassName(t.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(t.subject_id)}</td>
                   <td className="px-3 py-2">{t.test_type}</td>
@@ -515,7 +524,7 @@ function TestsTab() {
                   </td>
                 </tr>
               ))}
-              {tests.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>}
+              {tests.length === 0 && <tr><td colSpan={8} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>}
             </tbody>
           </table>
         </div>
