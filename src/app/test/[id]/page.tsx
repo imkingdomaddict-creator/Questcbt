@@ -1,215 +1,344 @@
-'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { shuffleArray } from '@/lib/utils'
-import type { Question } from '@/lib/supabase'
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import type { Question } from '@/lib/supabase';
+import { shuffleArray } from '@/lib/utils';
+
+interface StudentData {
+  reg_no: string;
+  full_name: string;
+  class_id: string;
+  subject_id: string;
+}
+
+interface TestData {
+  id: string;
+  title: string;
+  class_id: string;
+  subject_id: string;
+  test_type: string;
+  duration_minutes: number;
+  total_questions: number;
+}
 
 export default function TestPage() {
-  const router = useRouter()
-  const params = useParams()
-  const testId = params.id as string
+  const router = useRouter();
+  const params = useParams();
+  const testId = params.id as string;
 
-  const [questions, setQuestions] = useState<Question[]>([])
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [current, setCurrent] = useState(0)
-  const [timeLeft, setTimeLeft] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [test, setTest] = useState<any>(null)
-  const [student, setStudent] = useState<any>(null)
-  const submitted = useRef(false)
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [current, setCurrent] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [studentData, setStudentData] = useState<StudentData | null>(null);
+  const [testData, setTestData] = useState<TestData | null>(null);
+  const [showWarning, setShowWarning] = useState(false);
+  const [warningCount, setWarningCount] = useState(0);
+  const [showStartWarning, setShowStartWarning] = useState(true);
+  const submitted = useRef(false);
+  const warningCountRef = useRef(0);
 
-  const submitTest = useCallback(async (ans: Record<string, string>) => {
-    if (submitted.current) return
-    submitted.current = true
-    setSubmitting(true)
+  const handleSubmit = useCallback(
+    async (forced: boolean = false) => {
+      if (submitted.current) return;
+      submitted.current = true;
+      setSubmitting(true);
 
-    const s = sessionStorage.getItem('quest_student')
-    const t = sessionStorage.getItem('quest_test')
-    if (!s || !t) { router.push('/'); return }
-    const studentData = JSON.parse(s)
-    const testData = JSON.parse(t)
+      const sd = studentData;
+      const td = testData;
+      if (!sd || !td || questions.length === 0) return;
 
-    let score = 0
-    questions.forEach((q: Question) => {
-      if (ans[q.id] === q.correct_option) score++
-    })
-    const total = questions.length
-    const pct = total > 0 ? Math.round((score / total) * 100) : 0
+      let score = 0;
+      questions.forEach((q: Question, idx: number) => {
+        if (answers[idx] === q.correct_option) score++;
+      });
 
-    const { data: result } = await supabase.from('results').insert({
-      test_id: testId,
-      reg_no: studentData.reg_no,
-      student_name: studentData.full_name,
-      class_id: studentData.class_id,
-      subject_id: studentData.subject_id,
-      test_type: testData.test_type,
-      score, total, percentage: pct
-    }).select().single()
+      const total = questions.length;
+      const percentage = Math.round((score / total) * 100);
 
-    sessionStorage.removeItem('quest_test')
-    if (result) router.push(`/result/${result.id}`)
-    else router.push('/')
-  }, [questions, testId, router])
+      const { data, error } = await supabase
+        .from('results')
+        .insert([{
+          test_id: td.id,
+          reg_no: sd.reg_no,
+          student_name: sd.full_name,
+          class_id: sd.class_id,
+          subject_id: sd.subject_id,
+          test_type: td.test_type,
+          score,
+          total,
+          percentage,
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error saving result:', error);
+        alert('Error saving result. Please contact admin.');
+        return;
+      }
+
+      router.push(`/result/${data.id}`);
+    },
+    [studentData, testData, questions, answers, router]
+  );
+
+  // Tab/focus detection
+  useEffect(() => {
+    if (loading || showStartWarning) return;
+
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        warningCountRef.current += 1;
+        setWarningCount(warningCountRef.current);
+        if (warningCountRef.current >= 2) {
+          handleSubmit(true);
+        } else {
+          setShowWarning(true);
+        }
+      }
+    }
+
+    function handleBlur() {
+      if (!document.hidden) {
+        warningCountRef.current += 1;
+        setWarningCount(warningCountRef.current);
+        if (warningCountRef.current >= 2) {
+          handleSubmit(true);
+        } else {
+          setShowWarning(true);
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [loading, showStartWarning, handleSubmit]);
 
   useEffect(() => {
-    const s = sessionStorage.getItem('quest_student')
-    const t = sessionStorage.getItem('quest_test')
-    if (!s || !t) { router.push('/'); return }
-    const studentData = JSON.parse(s)
-    const testData = JSON.parse(t)
-    setStudent(studentData)
-    setTest(testData)
-
-    const endTime = new Date(testData.end_time).getTime()
-    const now = Date.now()
-    const remaining = Math.max(0, Math.floor((endTime - now) / 1000))
-    setTimeLeft(Math.min(remaining, testData.duration_minutes * 60))
+    const raw = sessionStorage.getItem('quest_student');
+    const rawTest = sessionStorage.getItem('quest_test');
+    if (!raw || !rawTest) {
+      router.push('/');
+      return;
+    }
+    const sd: StudentData = JSON.parse(raw);
+    const td: TestData = JSON.parse(rawTest);
+    setStudentData(sd);
+    setTestData(td);
 
     async function loadQuestions() {
-      const { data } = await supabase.from('questions')
+      const { data, error } = await supabase
+        .from('questions')
         .select('*')
-        .eq('class_id', testData.class_id)
-        .eq('subject_id', testData.subject_id)
-      const pool = shuffleArray(data || []).slice(0, testData.total_questions)
-      setQuestions(pool)
-      setLoading(false)
+        .eq('class_id', sd.class_id)
+        .eq('subject_id', sd.subject_id);
+
+      if (error || !data) {
+        alert('Failed to load questions.');
+        router.push('/');
+        return;
+      }
+
+      const shuffled = shuffleArray(data as Question[]).slice(0, td.total_questions);
+      setQuestions(shuffled);
+      setTimeLeft(td.duration_minutes * 60);
+      setLoading(false);
     }
-    loadQuestions()
-  }, [router, testId])
 
-  useEffect(() => {
-    if (loading || timeLeft <= 0) return
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          submitTest(answers)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [loading, answers, submitTest, timeLeft])
+    loadQuestions();
+  }, [router]);
 
+  // Anti-cheat
   useEffect(() => {
-    const block = (e: Event) => e.preventDefault()
-    document.addEventListener('contextmenu', block)
-    document.addEventListener('copy', block)
-    document.addEventListener('cut', block)
-    document.addEventListener('paste', block)
+    function blockContextMenu(e: MouseEvent) { e.preventDefault(); }
+    function blockCopy(e: ClipboardEvent) { e.preventDefault(); }
+    function blockPaste(e: ClipboardEvent) { e.preventDefault(); }
+    document.addEventListener('contextmenu', blockContextMenu);
+    document.addEventListener('copy', blockCopy);
+    document.addEventListener('paste', blockPaste);
     return () => {
-      document.removeEventListener('contextmenu', block)
-      document.removeEventListener('copy', block)
-      document.removeEventListener('cut', block)
-      document.removeEventListener('paste', block)
-    }
-  }, [])
+      document.removeEventListener('contextmenu', blockContextMenu);
+      document.removeEventListener('copy', blockCopy);
+      document.removeEventListener('paste', blockPaste);
+    };
+  }, []);
 
-  function formatTime(s: number) {
-    const m = Math.floor(s / 60), sec = s % 60
-    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+  // Timer
+  useEffect(() => {
+    if (timeLeft <= 0 || loading || showStartWarning) return;
+    const interval = setInterval(() => {
+      setTimeLeft((prev: number) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleSubmit(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timeLeft, loading, showStartWarning, handleSubmit]);
+
+  function formatTime(secs: number): string {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
   }
 
-  function selectAnswer(qId: string, opt: string) {
-    setAnswers(prev => ({ ...prev, [qId]: opt }))
+  function selectAnswer(option: string) {
+    setAnswers((prev: Record<number, string>) => ({ ...prev, [current]: option }));
   }
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-quest-light">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-quest-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-quest-navy font-semibold">Loading questions...</p>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-quest-light flex items-center justify-center">
+        <div className="text-quest-navy text-lg font-medium">Loading questions...</div>
       </div>
-    </div>
-  )
+    );
+  }
 
-  if (submitting) return (
-    <div className="min-h-screen flex items-center justify-center bg-quest-light">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-green-700 font-semibold">Submitting your answers...</p>
+  // Start warning screen
+  if (showStartWarning) {
+    return (
+      <div className="min-h-screen bg-quest-light flex items-center justify-center px-4">
+        <div className="max-w-sm w-full card text-center">
+          <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-red-600 text-2xl">⚠️</span>
+          </div>
+          <h2 className="text-xl font-black text-quest-navy mb-3">Before You Begin</h2>
+          <div className="text-left bg-red-50 border border-red-200 rounded-xl p-4 mb-5 space-y-2">
+            <p className="text-sm text-red-700 font-semibold">⚠️ Important Rules:</p>
+            <p className="text-sm text-red-600">• Do NOT switch to another tab or app</p>
+            <p className="text-sm text-red-600">• Do NOT minimize this window</p>
+            <p className="text-sm text-red-600">• Do NOT press the home button</p>
+            <p className="text-sm text-red-700 font-semibold mt-2">Your test will be automatically submitted if you leave this screen.</p>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">You get <strong>1 warning</strong> before auto-submit on the second offence.</p>
+          <button
+            onClick={() => setShowStartWarning(false)}
+            className="btn-primary w-full"
+          >
+            I Understand — Start Test
+          </button>
+        </div>
       </div>
-    </div>
-  )
+    );
+  }
 
-  const q = questions[current]
-  const answered = Object.keys(answers).length
-  const isLow = timeLeft < 60
+  // Warning overlay
+  if (showWarning) {
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center px-4">
+        <div className="max-w-sm w-full card text-center border-2 border-red-400">
+          <div className="text-4xl mb-3">🚨</div>
+          <h2 className="text-xl font-black text-red-600 mb-2">Warning!</h2>
+          <p className="text-gray-700 mb-2">You left the test screen.</p>
+          <p className="text-red-600 font-semibold mb-5">
+            This is warning <strong>{warningCount} of 1</strong>. If you leave again, your test will be <strong>automatically submitted</strong>.
+          </p>
+          <button
+            onClick={() => setShowWarning(false)}
+            className="btn-primary w-full bg-red-600 hover:bg-red-700"
+          >
+            Return to Test
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const q = questions[current];
+  const options: Array<{ key: string; label: string; text: string }> = [
+    { key: 'A', label: 'A', text: q.option_a },
+    { key: 'B', label: 'B', text: q.option_b },
+    { key: 'C', label: 'C', text: q.option_c },
+    { key: 'D', label: 'D', text: q.option_d },
+  ];
+
+  const answeredCount = Object.keys(answers).length;
+  const isTimeLow = timeLeft < 60;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ userSelect: 'none' }}>
-      <div className="bg-quest-navy text-white sticky top-0 z-10 shadow-md">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <p className="font-bold text-sm">{test?.title}</p>
-            <p className="text-blue-300 text-xs">{student?.full_name} · {student?.reg_no}</p>
-          </div>
-          <div className={`text-xl font-black px-3 py-1 rounded-lg ${isLow ? 'bg-red-500 animate-pulse' : 'bg-quest-blue'}`}>
-            {formatTime(timeLeft)}
-          </div>
+    <div className="min-h-screen bg-quest-light" style={{ userSelect: 'none' }}>
+      <div className="bg-quest-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+        <div>
+          <p className="font-bold text-sm">{testData?.title}</p>
+          <p className="text-xs text-blue-200">{studentData?.full_name} &mdash; {studentData?.reg_no}</p>
         </div>
-        <div className="h-1 bg-quest-blue">
-          <div className="h-1 bg-yellow-400 transition-all" style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
+        <div className={`font-mono text-xl font-bold px-3 py-1 rounded-lg ${isTimeLow ? 'bg-red-500 animate-pulse' : 'bg-quest-blue'}`}>
+          {formatTime(timeLeft)}
         </div>
       </div>
 
-      <div className="flex-1 max-w-2xl mx-auto w-full px-4 py-5">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-sm font-semibold text-gray-600">Question {current + 1} of {questions.length}</span>
-          <span className="text-xs text-gray-500">{answered} answered</span>
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="flex items-center justify-between mb-4 text-sm text-gray-500">
+          <span>Question {current + 1} of {questions.length}</span>
+          <span>{answeredCount} answered</span>
+        </div>
+        <div className="w-full bg-blue-100 rounded-full h-2 mb-6">
+          <div className="bg-quest-blue h-2 rounded-full transition-all" style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
         </div>
 
-        <div className="card mb-4">
-          <p className="text-gray-800 font-medium leading-relaxed">{q.question_text}</p>
+        <div className="card mb-5">
+          <p className="text-quest-navy font-semibold text-base leading-relaxed">
+            {current + 1}. {q.question_text}
+          </p>
         </div>
 
         <div className="space-y-3 mb-6">
-          {(['A', 'B', 'C', 'D'] as const).map(opt => {
-            const optText = q[`option_${opt.toLowerCase()}` as keyof Question] as string
-            const isSelected = answers[q.id] === opt
+          {options.map((opt: { key: string; label: string; text: string }) => {
+            const selected = answers[current] === opt.key;
             return (
-              <button key={opt} onClick={() => selectAnswer(q.id, opt)}
-                className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-start gap-3
-                  ${isSelected ? 'border-quest-blue bg-quest-light text-quest-navy font-semibold' : 'border-gray-200 bg-white hover:border-quest-blue hover:bg-quest-light'}`}>
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
-                  ${isSelected ? 'bg-quest-blue text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  {opt}
+              <button
+                key={opt.key}
+                onClick={() => selectAnswer(opt.key)}
+                className={`w-full text-left px-5 py-4 rounded-xl border-2 font-medium transition-all ${selected ? 'bg-quest-blue border-quest-blue text-white' : 'bg-white border-blue-100 text-gray-800 hover:border-quest-blue hover:bg-quest-light'}`}
+              >
+                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold mr-3 ${selected ? 'bg-white text-quest-blue' : 'bg-quest-light text-quest-navy'}`}>
+                  {opt.label}
                 </span>
-                <span className="text-sm leading-relaxed pt-0.5">{optText}</span>
+                {opt.text}
               </button>
-            )
+            );
           })}
         </div>
 
-        <div className="flex gap-3 mb-6">
-          <button onClick={() => setCurrent(c => Math.max(0, c - 1))} disabled={current === 0}
-            className="btn-secondary flex-1 disabled:opacity-40">← Prev</button>
-          {current < questions.length - 1
-            ? <button onClick={() => setCurrent(c => c + 1)} className="btn-primary flex-1">Next →</button>
-            : <button onClick={() => submitTest(answers)} className="btn-primary flex-1 bg-green-600 hover:bg-green-700" disabled={submitting}>
-                Submit Test ✓
-              </button>
-          }
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={() => setCurrent((p: number) => Math.max(0, p - 1))} disabled={current === 0} className="btn-secondary flex-1">
+            Previous
+          </button>
+          {current < questions.length - 1 ? (
+            <button onClick={() => setCurrent((p: number) => Math.min(questions.length - 1, p + 1))} className="btn-primary flex-1">
+              Next
+            </button>
+          ) : (
+            <button onClick={() => handleSubmit(false)} disabled={submitting} className="flex-1 bg-quest-accent text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-yellow-500 transition-colors disabled:opacity-50">
+              {submitting ? 'Submitting...' : 'Submit Test'}
+            </button>
+          )}
         </div>
 
-        <div className="card">
-          <p className="text-xs font-semibold text-gray-500 mb-3">Question Navigator</p>
+        <div className="mt-6 card">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Navigator</p>
           <div className="flex flex-wrap gap-2">
-            {questions.map((q2: Question, i: number) => (
-              <button key={i} onClick={() => setCurrent(i)}
-                className={`w-9 h-9 rounded-lg text-xs font-bold border-2 transition-all
-                  ${i === current ? 'border-quest-blue bg-quest-blue text-white'
-                  : answers[q2.id] ? 'border-green-500 bg-green-50 text-green-700'
-                  : 'border-gray-200 bg-white text-gray-600'}`}>
-                {i + 1}
+            {questions.map((_: Question, idx: number) => (
+              <button key={idx} onClick={() => setCurrent(idx)}
+                className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all ${idx === current ? 'bg-quest-navy text-white' : answers[idx] ? 'bg-quest-blue text-white' : 'bg-blue-50 text-gray-500 hover:bg-blue-100'}`}>
+                {idx + 1}
               </button>
             ))}
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
