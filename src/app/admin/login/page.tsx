@@ -1,9 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 export default function AdminLogin() {
-  const router = useRouter()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,7 +18,7 @@ export default function AdminLogin() {
     })
 
     if (res.ok) {
-   window.location.href = '/admin'
+      window.location.replace('/admin')
     } else {
       setError('Incorrect password')
       setLoading(false)
