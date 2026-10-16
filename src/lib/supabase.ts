@@ -49,8 +49,8 @@ export interface Test {
   total_questions: number;
   start_time: string;
   end_time: string;
-    test_code: string;
-  is_active: boolean;is_active: boolean;
+  test_code: string;
+  is_active: boolean;
   created_at: string;
 }
 
