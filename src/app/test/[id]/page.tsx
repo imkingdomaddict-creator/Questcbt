@@ -39,6 +39,8 @@ export default function TestPage() {
   const [showWarning, setShowWarning] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const [showStartWarning, setShowStartWarning] = useState(true);
+  const [showTimeWarning, setShowTimeWarning] = useState(false);
+  const timeWarningShown = useRef(false);
   const warningCountRef = useRef(0);
   const submitted = useRef(false);
 
@@ -164,6 +166,10 @@ export default function TestPage() {
     if (timeLeft <= 0 || loading || showStartWarning) return;
     const interval = setInterval(() => {
       setTimeLeft((prev: number) => {
+        if (prev === 60 && !timeWarningShown.current) {
+          timeWarningShown.current = true;
+          setShowTimeWarning(true);
+        }
         if (prev <= 1) { clearInterval(interval); handleSubmit(true); return 0; }
         return prev - 1;
       });
@@ -197,10 +203,7 @@ export default function TestPage() {
             <li>⚠️ First offence: a warning. Second offence: test auto-submits</li>
             <li>✅ Ensure you are ready before proceeding</li>
           </ul>
-          <button
-            onClick={() => setShowStartWarning(false)}
-            className="btn-primary w-full"
-          >
+          <button onClick={() => setShowStartWarning(false)} className="btn-primary w-full">
             I Understand — Begin Test
           </button>
         </div>
@@ -230,7 +233,7 @@ export default function TestPage() {
   return (
     <div className="min-h-screen bg-quest-light" style={{ userSelect: 'none' }}>
 
-      {/* Warning overlay */}
+      {/* Anti-cheat warning overlay */}
       {showWarning && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -239,11 +242,30 @@ export default function TestPage() {
             <p className="text-gray-600 text-sm mb-4">
               You left the test window. <strong>One more time and your test will be automatically submitted.</strong>
             </p>
-            <button
-              onClick={() => setShowWarning(false)}
-              className="btn-primary w-full bg-red-600 hover:bg-red-700"
-            >
+            <button onClick={() => setShowWarning(false)} className="btn-primary w-full bg-red-600 hover:bg-red-700">
               Return to Test
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 60 second time warning overlay */}
+      {showTimeWarning && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <div className="text-5xl mb-3">⏰</div>
+            <h2 className="text-xl font-bold text-quest-accent mb-2">1 Minute Left!</h2>
+            <p className="text-gray-600 text-sm mb-2">
+              You have <strong>60 seconds</strong> remaining.
+            </p>
+            <p className="text-gray-500 text-xs mb-5">
+              Answered: {answeredCount} of {questions.length} questions
+            </p>
+            <button
+              onClick={() => setShowTimeWarning(false)}
+              className="btn-primary w-full"
+            >
+              Continue Test
             </button>
           </div>
         </div>
