@@ -39,7 +39,7 @@ export default function TestPage() {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [testData, setTestData] = useState<TestData | null>(null);
   const [showWarning, setShowWarning] = useState(false);
-  const [showStartWarning, setShowStartWarning] = useState(false);
+  const [showStartWarning, setShowStartWarning] = useState(false); // FIX: false, set true after load
   const [showTimeWarning, setShowTimeWarning] = useState(false);
   const [expired, setExpired] = useState(false);
 
@@ -48,6 +48,29 @@ export default function TestPage() {
   const submitted = useRef(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questionIdsRef = useRef<string[]>([]);
+
+  // ── Ping session every 30s ─────────────────────────────────────────────
+  const pingSession = useCallback(async (sd: StudentData, td: TestData) => {
+    const token = sessionStorage.getItem('quest_session_token');
+    if (!token) return;
+    await supabase.from('sessions').upsert(
+      {
+        test_id: td.id,
+        reg_no: sd.reg_no,
+        session_token: token,
+        last_seen: new Date().toISOString(),
+      },
+      { onConflict: 'test_id,reg_no' }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!studentData || !testData || loading || showStartWarning) return;
+    const interval = setInterval(() => {
+      pingSession(studentData, testData);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [studentData, testData, loading, showStartWarning, pingSession]);
 
   // ── Save draft ─────────────────────────────────────────────────────────
   const saveDraft = useCallback(async (
@@ -65,18 +88,6 @@ export default function TestPage() {
       question_ids: qIds,
       flagged: Array.from(currentFlagged),
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'test_id,reg_no' });
-  }, []);
-
-  // ── Ping session every 30s ─────────────────────────────────────────────
-  const pingSession = useCallback(async (sd: StudentData, td: TestData) => {
-    const token = sessionStorage.getItem('quest_session_token');
-    if (!token) return;
-    await supabase.from('sessions').upsert({
-      test_id: td.id,
-      reg_no: sd.reg_no,
-      session_token: token,
-      last_seen: new Date().toISOString(),
     }, { onConflict: 'test_id,reg_no' });
   }, []);
 
@@ -122,6 +133,7 @@ export default function TestPage() {
       return;
     }
 
+    // Clean up draft, session, and sessionStorage tokens
     await Promise.all([
       supabase.from('drafts').delete().eq('test_id', td.id).eq('reg_no', sd.reg_no),
       supabase.from('sessions').delete().eq('test_id', td.id).eq('reg_no', sd.reg_no),
@@ -186,21 +198,12 @@ export default function TestPage() {
       setQuestions(shuffled);
       setTimeLeft(remaining);
       if (remaining <= 60) timeWarningShown.current = true;
-      setShowStartWarning(true);
+      setShowStartWarning(true); // FIX: only show after successful authenticated load
       setLoading(false);
     }
 
     loadQuestions();
   }, [router]);
-
-  // ── Session ping every 30s ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!studentData || !testData || loading || showStartWarning) return;
-    const interval = setInterval(() => {
-      pingSession(studentData, testData);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [studentData, testData, loading, showStartWarning, pingSession]);
 
   // ── Anti-cheat: tab/focus ──────────────────────────────────────────────
   useEffect(() => {
@@ -285,6 +288,8 @@ export default function TestPage() {
     });
   }
 
+  // ── Render order: expired → loading → startWarning → main UI ──────────
+
   if (expired) {
     return (
       <div className="min-h-screen bg-quest-navy flex items-center justify-center px-4">
@@ -308,6 +313,7 @@ export default function TestPage() {
     );
   }
 
+  // ── Start warning (shown only after authenticated load) ────────────────
   if (showStartWarning) {
     return (
       <div className="min-h-screen bg-quest-navy flex items-center justify-center px-4">
@@ -348,6 +354,7 @@ export default function TestPage() {
   return (
     <div className="min-h-screen bg-quest-light" style={{ userSelect: 'none' }}>
 
+      {/* Anti-cheat warning */}
       {showWarning && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -363,6 +370,7 @@ export default function TestPage() {
         </div>
       )}
 
+      {/* 60-second warning */}
       {showTimeWarning && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -379,6 +387,7 @@ export default function TestPage() {
         </div>
       )}
 
+      {/* Top bar */}
       <div className="bg-quest-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
           <p className="font-bold text-sm">{testData?.title}</p>
@@ -390,6 +399,7 @@ export default function TestPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Progress */}
         <div className="flex items-center justify-between mb-4 text-sm text-gray-500">
           <span>Question {current + 1} of {questions.length}</span>
           <span>{answeredCount} answered {flaggedCount > 0 && `· ${flaggedCount} flagged`}</span>
@@ -399,6 +409,7 @@ export default function TestPage() {
             style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
         </div>
 
+        {/* Question card with flag button */}
         <div className={`card mb-5 ${isFlagged ? 'border-2 border-amber-400' : ''}`}>
           <div className="flex items-start justify-between gap-3">
             <p className="text-quest-navy font-semibold text-base leading-relaxed flex-1">
@@ -418,6 +429,7 @@ export default function TestPage() {
           </div>
         </div>
 
+        {/* Options */}
         <div className="space-y-3 mb-6">
           {options.map((opt) => {
             const selected = answers[current] === opt.key;
@@ -437,6 +449,7 @@ export default function TestPage() {
           })}
         </div>
 
+        {/* Navigation */}
         <div className="flex items-center justify-between gap-3">
           <button onClick={() => setCurrent((p) => Math.max(0, p - 1))}
             disabled={current === 0} className="btn-secondary flex-1">
@@ -453,6 +466,7 @@ export default function TestPage() {
           )}
         </div>
 
+        {/* Question navigator */}
         <div className="mt-6 card">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Question Navigator</p>
@@ -468,7 +482,7 @@ export default function TestPage() {
               const isCurrent = idx === current;
               return (
                 <button key={idx} onClick={() => setCurrent(idx)}
-                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all ${
+                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all relative ${
                     isCurrent ? 'bg-quest-navy text-white ring-2 ring-quest-navy ring-offset-1'
                     : isFlaggedIdx ? 'bg-amber-400 text-white'
                     : isAnswered ? 'bg-quest-blue text-white'
@@ -481,7 +495,7 @@ export default function TestPage() {
           </div>
           {flaggedCount > 0 && (
             <p className="text-xs text-amber-600 mt-3 font-medium">
-              🚩 {flaggedCount} question{flaggedCount > 1 ? 's' : ''} flagged — remember to revisit before submitting.
+              🚩 {flaggedCount} question{flaggedCount > 1 ? 's' : ''} flagged for review — remember to revisit before submitting.
             </p>
           )}
         </div>
