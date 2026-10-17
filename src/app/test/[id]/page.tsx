@@ -21,6 +21,7 @@ interface TestData {
   test_type: string;
   duration_minutes: number;
   total_questions: number;
+  end_time?: string;
 }
 
 export default function TestPage() {
@@ -37,102 +38,183 @@ export default function TestPage() {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [testData, setTestData] = useState<TestData | null>(null);
   const [showWarning, setShowWarning] = useState(false);
-  const [warningCount, setWarningCount] = useState(0);
   const [showStartWarning, setShowStartWarning] = useState(true);
   const [showTimeWarning, setShowTimeWarning] = useState(false);
+  const [expired, setExpired] = useState(false);
+
   const timeWarningShown = useRef(false);
   const warningCountRef = useRef(0);
   const submitted = useRef(false);
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const questionIdsRef = useRef<string[]>([]);
+  const startedAtRef = useRef<string>('');
 
-  const handleSubmit = useCallback(
-    async (forced: boolean = false) => {
-      if (submitted.current) return;
-      submitted.current = true;
-      setSubmitting(true);
+  // ── Save draft (debounced 1.5s after last answer) ──────────────────────
+  const saveDraft = useCallback(async (
+    currentAnswers: Record<number, string>,
+    sd: StudentData,
+    td: TestData,
+    qIds: string[]
+  ) => {
+    if (!sd || !td || qIds.length === 0) return;
+    await supabase.from('drafts').upsert({
+      test_id: td.id,
+      reg_no: sd.reg_no,
+      answers: currentAnswers,
+      question_ids: qIds,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'test_id,reg_no' });
+  }, []);
 
-      const sd = studentData;
-      const td = testData;
-      if (!sd || !td || questions.length === 0) return;
+  // ── Submit ─────────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(async (forced: boolean = false) => {
+    if (submitted.current) return;
+    submitted.current = true;
+    setSubmitting(true);
 
-      let score = 0;
-      questions.forEach((q: Question, idx: number) => {
-        if (answers[idx] === q.correct_option) score++;
-      });
+    const sd = studentData;
+    const td = testData;
+    if (!sd || !td || questions.length === 0) return;
 
-      const total = questions.length;
-      const percentage = Math.round((score / total) * 100);
+    let score = 0;
+    questions.forEach((q: Question, idx: number) => {
+      if (answers[idx] === q.correct_option) score++;
+    });
 
-      const { data, error } = await supabase
-        .from('results')
-        .insert([{
-          test_id: td.id,
-          reg_no: sd.reg_no,
-          student_name: sd.full_name,
-          class_id: sd.class_id,
-          subject_id: sd.subject_id,
-          test_type: td.test_type,
-          score,
-          total,
-          percentage,
-        }])
-        .select()
-        .single();
+    const total = questions.length;
+    const percentage = Math.round((score / total) * 100);
 
-      if (error) {
-        console.error('Error saving result:', error);
-        alert('Error saving result. Please contact admin.');
-        return;
-      }
+    const { data, error } = await supabase
+      .from('results')
+      .insert([{
+        test_id: td.id,
+        reg_no: sd.reg_no,
+        student_name: sd.full_name,
+        class_id: sd.class_id,
+        subject_id: sd.subject_id,
+        test_type: td.test_type,
+        score,
+        total,
+        percentage,
+      }])
+      .select()
+      .single();
 
-      router.push(`/result/${data.id}`);
-    },
-    [studentData, testData, questions, answers, router]
-  );
+    if (error) {
+      console.error('Error saving result:', error);
+      alert('Error saving result. Please contact admin.');
+      submitted.current = false;
+      setSubmitting(false);
+      return;
+    }
 
+    // Delete draft on successful submit
+    await supabase.from('drafts')
+      .delete()
+      .eq('test_id', td.id)
+      .eq('reg_no', sd.reg_no);
+
+    router.push(`/result/${data.id}`);
+  }, [studentData, testData, questions, answers, router]);
+
+  // ── Load questions + restore draft if exists ───────────────────────────
   useEffect(() => {
     const raw = sessionStorage.getItem('quest_student');
     const rawTest = sessionStorage.getItem('quest_test');
+    const startedAt = sessionStorage.getItem('quest_started_at') || new Date().toISOString();
     if (!raw || !rawTest) { router.push('/'); return; }
+
     const sd: StudentData = JSON.parse(raw);
     const td: TestData = JSON.parse(rawTest);
     setStudentData(sd);
     setTestData(td);
+    startedAtRef.current = startedAt;
+    sessionStorage.setItem('quest_started_at', startedAt);
+
+    // Check deadline — if test window has passed, block entry
+    if (td.end_time && new Date() > new Date(td.end_time)) {
+      setExpired(true);
+      setLoading(false);
+      return;
+    }
+
+    // Calculate remaining time from actual start time
+    const elapsedSeconds = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+    const totalSeconds = td.duration_minutes * 60;
+    const remaining = Math.max(0, totalSeconds - elapsedSeconds);
+
+    if (remaining === 0) {
+      setExpired(true);
+      setLoading(false);
+      return;
+    }
 
     async function loadQuestions() {
-      const { data, error } = await supabase
-        .from('questions')
+      // Check for existing draft first
+      const { data: draft } = await supabase
+        .from('drafts')
         .select('*')
-        .eq('class_id', sd.class_id)
-        .eq('subject_id', sd.subject_id);
+        .eq('test_id', td.id)
+        .eq('reg_no', sd.reg_no)
+        .single();
 
-      if (error || !data) { alert('Failed to load questions.'); router.push('/'); return; }
+      let shuffled: Question[];
 
-      const shuffled = shuffleArray(data as Question[]).slice(0, td.total_questions);
+      if (draft && draft.question_ids?.length > 0) {
+        // Restore exact same question order from draft
+        const { data: allQ } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('class_id', sd.class_id)
+          .eq('subject_id', sd.subject_id);
+
+        const qMap: Record<string, Question> = {};
+        (allQ || []).forEach((q: Question) => { qMap[q.id] = q; });
+        shuffled = draft.question_ids
+          .map((id: string) => qMap[id])
+          .filter(Boolean) as Question[];
+
+        // Restore saved answers
+        if (draft.answers) setAnswers(draft.answers);
+      } else {
+        // Fresh load
+        const { data, error } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('class_id', sd.class_id)
+          .eq('subject_id', sd.subject_id);
+
+        if (error || !data) { alert('Failed to load questions.'); router.push('/'); return; }
+        shuffled = shuffleArray(data as Question[]).slice(0, td.total_questions);
+      }
+
+      questionIdsRef.current = shuffled.map((q: Question) => q.id);
       setQuestions(shuffled);
-      setTimeLeft(td.duration_minutes * 60);
+      setTimeLeft(remaining);
+
+      // If time is already under 60s, mark warning as shown so it doesn't pop
+      if (remaining <= 60) timeWarningShown.current = true;
+
       setLoading(false);
     }
 
     loadQuestions();
   }, [router]);
 
-  // Anti-cheat: tab/focus detection
+  // ── Anti-cheat: tab/focus ──────────────────────────────────────────────
   useEffect(() => {
     if (loading || showStartWarning) return;
 
     function handleVisibilityChange() {
       if (document.hidden) {
         warningCountRef.current += 1;
-        setWarningCount(warningCountRef.current);
         if (warningCountRef.current >= 2) { handleSubmit(true); }
         else { setShowWarning(true); }
       }
     }
-
     function handleBlur() {
       if (!document.hidden) {
         warningCountRef.current += 1;
-        setWarningCount(warningCountRef.current);
         if (warningCountRef.current >= 2) { handleSubmit(true); }
         else { setShowWarning(true); }
       }
@@ -146,22 +228,20 @@ export default function TestPage() {
     };
   }, [loading, showStartWarning, handleSubmit]);
 
-  // Anti-cheat: block right-click, copy, paste
+  // ── Anti-cheat: block right-click/copy/paste ───────────────────────────
   useEffect(() => {
-    function blockContextMenu(e: MouseEvent) { e.preventDefault(); }
-    function blockCopy(e: ClipboardEvent) { e.preventDefault(); }
-    function blockPaste(e: ClipboardEvent) { e.preventDefault(); }
-    document.addEventListener('contextmenu', blockContextMenu);
-    document.addEventListener('copy', blockCopy);
-    document.addEventListener('paste', blockPaste);
+    const block = (e: Event) => e.preventDefault();
+    document.addEventListener('contextmenu', block);
+    document.addEventListener('copy', block);
+    document.addEventListener('paste', block);
     return () => {
-      document.removeEventListener('contextmenu', blockContextMenu);
-      document.removeEventListener('copy', blockCopy);
-      document.removeEventListener('paste', blockPaste);
+      document.removeEventListener('contextmenu', block);
+      document.removeEventListener('copy', block);
+      document.removeEventListener('paste', block);
     };
   }, []);
 
-  // Timer
+  // ── Timer ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (timeLeft <= 0 || loading || showStartWarning) return;
     const interval = setInterval(() => {
@@ -177,6 +257,16 @@ export default function TestPage() {
     return () => clearInterval(interval);
   }, [timeLeft, loading, showStartWarning, handleSubmit]);
 
+  // ── Auto-save on answer change ─────────────────────────────────────────
+  useEffect(() => {
+    if (!studentData || !testData || questionIdsRef.current.length === 0) return;
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => {
+      saveDraft(answers, studentData, testData, questionIdsRef.current);
+    }, 1500);
+    return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
+  }, [answers, studentData, testData, saveDraft]);
+
   function formatTime(secs: number): string {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
@@ -187,7 +277,25 @@ export default function TestPage() {
     setAnswers((prev: Record<number, string>) => ({ ...prev, [current]: option }));
   }
 
-  // Start warning screen
+  // ── Expired screen ─────────────────────────────────────────────────────
+  if (expired) {
+    return (
+      <div className="min-h-screen bg-quest-navy flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
+          <div className="text-5xl mb-4">⏰</div>
+          <h2 className="text-xl font-bold text-red-600 mb-3">Test Window Closed</h2>
+          <p className="text-gray-600 text-sm mb-6">
+            The time allocated for this test has expired. Please contact your teacher.
+          </p>
+          <button onClick={() => router.push('/')} className="btn-primary w-full">
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Start warning screen ───────────────────────────────────────────────
   if (showStartWarning) {
     return (
       <div className="min-h-screen bg-quest-navy flex items-center justify-center px-4">
@@ -201,6 +309,7 @@ export default function TestPage() {
             <li>📵 Do <strong>not</strong> press the home button</li>
             <li>⏱️ The timer starts immediately when you click Begin</li>
             <li>⚠️ First offence: a warning. Second offence: test auto-submits</li>
+            <li>💾 Your answers are saved automatically as you go</li>
             <li>✅ Ensure you are ready before proceeding</li>
           </ul>
           <button onClick={() => setShowStartWarning(false)} className="btn-primary w-full">
@@ -220,20 +329,19 @@ export default function TestPage() {
   }
 
   const q = questions[current];
-  const options: Array<{ key: string; label: string; text: string }> = [
-    { key: 'A', label: 'A', text: q.option_a },
-    { key: 'B', label: 'B', text: q.option_b },
-    { key: 'C', label: 'C', text: q.option_c },
-    { key: 'D', label: 'D', text: q.option_d },
+  const options = [
+    { key: 'A', text: q.option_a },
+    { key: 'B', text: q.option_b },
+    { key: 'C', text: q.option_c },
+    { key: 'D', text: q.option_d },
   ];
-
   const answeredCount = Object.keys(answers).length;
-  const isTimeLow = timeLeft < 60;
+  const isTimeLow = timeLeft <= 60;
 
   return (
     <div className="min-h-screen bg-quest-light" style={{ userSelect: 'none' }}>
 
-      {/* Anti-cheat warning overlay */}
+      {/* Anti-cheat warning */}
       {showWarning && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -249,7 +357,7 @@ export default function TestPage() {
         </div>
       )}
 
-      {/* 60 second time warning overlay */}
+      {/* 60-second warning */}
       {showTimeWarning && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -261,10 +369,7 @@ export default function TestPage() {
             <p className="text-gray-500 text-xs mb-5">
               Answered: {answeredCount} of {questions.length} questions
             </p>
-            <button
-              onClick={() => setShowTimeWarning(false)}
-              className="btn-primary w-full"
-            >
+            <button onClick={() => setShowTimeWarning(false)} className="btn-primary w-full">
               Continue Test
             </button>
           </div>
@@ -289,7 +394,8 @@ export default function TestPage() {
           <span>{answeredCount} answered</span>
         </div>
         <div className="w-full bg-blue-100 rounded-full h-2 mb-6">
-          <div className="bg-quest-blue h-2 rounded-full transition-all" style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
+          <div className="bg-quest-blue h-2 rounded-full transition-all"
+            style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
         </div>
 
         {/* Question */}
@@ -301,21 +407,17 @@ export default function TestPage() {
 
         {/* Options */}
         <div className="space-y-3 mb-6">
-          {options.map((opt: { key: string; label: string; text: string }) => {
+          {options.map((opt) => {
             const selected = answers[current] === opt.key;
             return (
-              <button
-                key={opt.key}
-                onClick={() => selectAnswer(opt.key)}
+              <button key={opt.key} onClick={() => selectAnswer(opt.key)}
                 className={`w-full text-left px-5 py-4 rounded-xl border-2 font-medium transition-all ${
-                  selected
-                    ? 'bg-quest-blue border-quest-blue text-white'
-                    : 'bg-white border-blue-100 text-gray-800 hover:border-quest-blue hover:bg-quest-light'
-                }`}
-              >
-                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold mr-3 ${selected ? 'bg-white text-quest-blue' : 'bg-quest-light text-quest-navy'}`}>
-                  {opt.label}
-                </span>
+                  selected ? 'bg-quest-blue border-quest-blue text-white'
+                  : 'bg-white border-blue-100 text-gray-800 hover:border-quest-blue hover:bg-quest-light'
+                }`}>
+                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold mr-3 ${
+                  selected ? 'bg-white text-quest-blue' : 'bg-quest-light text-quest-navy'
+                }`}>{opt.key}</span>
                 {opt.text}
               </button>
             );
@@ -324,40 +426,32 @@ export default function TestPage() {
 
         {/* Navigation */}
         <div className="flex items-center justify-between gap-3">
-          <button
-            onClick={() => setCurrent((p: number) => Math.max(0, p - 1))}
-            disabled={current === 0}
-            className="btn-secondary flex-1"
-          >
+          <button onClick={() => setCurrent((p: number) => Math.max(0, p - 1))}
+            disabled={current === 0} className="btn-secondary flex-1">
             Previous
           </button>
           {current < questions.length - 1 ? (
-            <button onClick={() => setCurrent((p: number) => Math.min(questions.length - 1, p + 1))} className="btn-primary flex-1">
-              Next
-            </button>
+            <button onClick={() => setCurrent((p: number) => Math.min(questions.length - 1, p + 1))}
+              className="btn-primary flex-1">Next</button>
           ) : (
-            <button
-              onClick={() => handleSubmit(false)}
-              disabled={submitting}
-              className="flex-1 bg-quest-accent text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-yellow-500 transition-colors disabled:opacity-50"
-            >
+            <button onClick={() => handleSubmit(false)} disabled={submitting}
+              className="flex-1 bg-quest-accent text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-yellow-500 transition-colors disabled:opacity-50">
               {submitting ? 'Submitting...' : 'Submit Test'}
             </button>
           )}
         </div>
 
-        {/* Question grid */}
+        {/* Question navigator */}
         <div className="mt-6 card">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Navigator</p>
           <div className="flex flex-wrap gap-2">
             {questions.map((_: Question, idx: number) => (
-              <button
-                key={idx}
-                onClick={() => setCurrent(idx)}
+              <button key={idx} onClick={() => setCurrent(idx)}
                 className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all ${
-                  idx === current ? 'bg-quest-navy text-white' : answers[idx] ? 'bg-quest-blue text-white' : 'bg-blue-50 text-gray-500 hover:bg-blue-100'
-                }`}
-              >
+                  idx === current ? 'bg-quest-navy text-white'
+                  : answers[idx] ? 'bg-quest-blue text-white'
+                  : 'bg-blue-50 text-gray-500 hover:bg-blue-100'
+                }`}>
                 {idx + 1}
               </button>
             ))}
