@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import type { ClassRecord, Subject, Student, Test, Result } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 interface QuestionCount {
   class_id: string;
   subject_id: string;
@@ -13,6 +15,8 @@ interface QuestionCount {
   subject_name: string;
   count: number;
 }
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const router = useRouter();
@@ -44,13 +48,10 @@ export default function AdminPage() {
 
       <div className="bg-white border-b border-blue-100 px-4 flex overflow-x-auto gap-1">
         {tabs.map((t: string, i: number) => (
-          <button
-            key={i}
-            onClick={() => setTab(i)}
+          <button key={i} onClick={() => setTab(i)}
             className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               tab === i ? 'border-quest-blue text-quest-blue' : 'border-transparent text-gray-500 hover:text-quest-navy'
-            }`}
-          >
+            }`}>
             {t}
           </button>
         ))}
@@ -67,6 +68,8 @@ export default function AdminPage() {
   );
 }
 
+// ─── Helper Components ───────────────────────────────────────────────────────
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="text-lg font-semibold text-quest-navy mb-4">{children}</h2>;
 }
@@ -74,9 +77,10 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function Alert({ type, msg }: { type: 'success' | 'error'; msg: string }) {
   if (!msg) return null;
   return (
-    <div className={`mb-4 p-3 rounded-lg text-sm ${type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-      {msg}
-    </div>
+    <div className={`mb-4 p-3 rounded-lg text-sm ${
+      type === 'success' ? 'bg-green-50 border border-green-200 text-green-700'
+      : 'bg-red-50 border border-red-200 text-red-700'
+    }`}>{msg}</div>
   );
 }
 
@@ -91,39 +95,37 @@ function ClassesSubjectsTab() {
   const [err, setErr] = useState('');
 
   async function load() {
-    const [cd, sd] = await Promise.all([
-      fetch('/api/admin/classes').then(r => r.json()),
-      fetch('/api/admin/subjects').then(r => r.json()),
-    ]);
-    if (Array.isArray(cd)) setClasses(cd);
-    if (Array.isArray(sd)) setSubjects(sd);
+    const { data: cd } = await supabase.from('classes').select('*').order('name');
+    const { data: sd } = await supabase.from('subjects').select('*').order('name');
+    if (cd) setClasses(cd as ClassRecord[]);
+    if (sd) setSubjects(sd as Subject[]);
   }
 
   useEffect(() => { load(); }, []);
 
   async function addClass() {
     if (!newClass.trim()) return;
-    const res = await fetch('/api/admin/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newClass.trim() }) });
-    if (!res.ok) { setErr('Failed to add class.'); return; }
+    const { error } = await supabase.from('classes').insert([{ name: newClass.trim() }]);
+    if (error) { setErr('Failed to add class.'); return; }
     setMsg('Class added.'); setNewClass(''); load();
   }
 
   async function deleteClass(id: string) {
     if (!confirm('Delete this class?')) return;
-    await fetch('/api/admin/classes', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    await supabase.from('classes').delete().eq('id', id);
     load();
   }
 
   async function addSubject() {
     if (!newSubject.trim()) return;
-    const res = await fetch('/api/admin/subjects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newSubject.trim() }) });
-    if (!res.ok) { setErr('Failed to add subject.'); return; }
+    const { error } = await supabase.from('subjects').insert([{ name: newSubject.trim() }]);
+    if (error) { setErr('Failed to add subject.'); return; }
     setMsg('Subject added.'); setNewSubject(''); load();
   }
 
   async function deleteSubject(id: string) {
     if (!confirm('Delete this subject?')) return;
-    await fetch('/api/admin/subjects', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    await supabase.from('subjects').delete().eq('id', id);
     load();
   }
 
@@ -180,36 +182,30 @@ function StudentsTab() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const [cd, sd] = await Promise.all([
-      fetch('/api/admin/classes').then(r => r.json()),
-      fetch('/api/admin/students').then(r => r.json()),
-    ]);
-    if (Array.isArray(cd)) setClasses(cd);
-    if (Array.isArray(sd)) setStudents(sd);
+    const { data: cd } = await supabase.from('classes').select('*').order('name');
+    if (cd) setClasses(cd as ClassRecord[]);
+    const { data } = await supabase.from('students').select('*').order('full_name');
+    if (data) setStudents(data as Student[]);
   }
 
   useEffect(() => { load(); }, []);
 
   function getClassName(id: string) {
-    const c = classes.find((cl: ClassRecord) => cl.id === id);
-    return c ? c.name : id;
+    return classes.find((cl: ClassRecord) => cl.id === id)?.name ?? id;
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true); setErr(''); setMsg('');
-
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const data = evt.target?.result;
       const wb = XLSX.read(data, { type: 'binary' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws);
-
       const classMap: Record<string, string> = {};
       classes.forEach((c: ClassRecord) => { classMap[c.name.toLowerCase()] = c.id; });
-
       const inserts: any[] = [];
       for (const row of rows) {
         const reg_no = String(row['reg_no'] || row['Reg No'] || row['RegNo'] || '').trim();
@@ -218,15 +214,9 @@ function StudentsTab() {
         const class_id = classMap[className.toLowerCase()];
         if (reg_no && full_name && class_id) inserts.push({ reg_no, full_name, class_id });
       }
-
-      if (inserts.length === 0) {
-        setErr('No valid rows found. Ensure columns: reg_no, full_name, class');
-        setUploading(false);
-        return;
-      }
-
-      const res = await fetch('/api/admin/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inserts) });
-      if (!res.ok) { setErr('Upload failed.'); }
+      if (inserts.length === 0) { setErr('No valid rows found. Ensure columns: reg_no, full_name, class'); setUploading(false); return; }
+      const { error } = await supabase.from('students').upsert(inserts, { onConflict: 'reg_no' });
+      if (error) setErr('Upload failed: ' + error.message);
       else { setMsg(`Uploaded ${inserts.length} students.`); load(); }
       setUploading(false);
     };
@@ -236,7 +226,7 @@ function StudentsTab() {
 
   async function deleteStudent(id: string) {
     if (!confirm('Delete this student?')) return;
-    await fetch('/api/admin/students', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    await supabase.from('students').delete().eq('id', id);
     load();
   }
 
@@ -280,9 +270,7 @@ function StudentsTab() {
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-6 text-gray-400 text-sm">No students found.</td></tr>
-            )}
+            {filtered.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-gray-400 text-sm">No students found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -304,29 +292,24 @@ function QuestionsTab() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const [cd, sd, qd] = await Promise.all([
-      fetch('/api/admin/classes').then(r => r.json()),
-      fetch('/api/admin/subjects').then(r => r.json()),
-      fetch('/api/admin/questions').then(r => r.json()),
-    ]);
-    if (Array.isArray(cd)) setClasses(cd);
-    if (Array.isArray(sd)) setSubjects(sd);
-
-    if (Array.isArray(cd) && Array.isArray(sd) && Array.isArray(qd)) {
-      const countMap: Record<string, number> = {};
-      qd.forEach((q: any) => {
-        const key = `${q.class_id}__${q.subject_id}`;
-        countMap[key] = (countMap[key] || 0) + 1;
-      });
-      const result: QuestionCount[] = Object.keys(countMap).map((key: string) => {
-        const [cid, sid] = key.split('__');
-        const cls = cd.find((c: ClassRecord) => c.id === cid);
-        const sub = sd.find((s: Subject) => s.id === sid);
-        return { class_id: cid, subject_id: sid, class_name: cls ? cls.name : cid, subject_name: sub ? sub.name : sid, count: countMap[key] };
-      });
-      result.sort((a: any, b: any) => a.class_name.localeCompare(b.class_name));
-      setCounts(result);
-    }
+    const { data: cd } = await supabase.from('classes').select('*').order('name');
+    const { data: sd } = await supabase.from('subjects').select('*').order('name');
+    if (cd) setClasses(cd as ClassRecord[]);
+    if (sd) setSubjects(sd as Subject[]);
+    const { data: qData } = await supabase.from('questions').select('class_id, subject_id');
+    if (!qData || !cd || !sd) return;
+    const classArr = cd as ClassRecord[];
+    const subjectArr = sd as Subject[];
+    const countMap: Record<string, number> = {};
+    qData.forEach((q: any) => { const key = `${q.class_id}__${q.subject_id}`; countMap[key] = (countMap[key] || 0) + 1; });
+    const result: QuestionCount[] = Object.keys(countMap).map((key: string) => {
+      const [cid, sid] = key.split('__');
+      const cls = classArr.find((c: ClassRecord) => c.id === cid);
+      const sub = subjectArr.find((s: Subject) => s.id === sid);
+      return { class_id: cid, subject_id: sid, class_name: cls ? cls.name : cid, subject_name: sub ? sub.name : sid, count: countMap[key] };
+    });
+    result.sort((a: any, b: any) => a.class_name.localeCompare(b.class_name));
+    setCounts(result);
   }
 
   useEffect(() => { load(); }, []);
@@ -336,14 +319,12 @@ function QuestionsTab() {
     if (!file) return;
     if (!filterClass || !filterSubject) { setErr('Select a class and subject before uploading.'); return; }
     setUploading(true); setErr(''); setMsg('');
-
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const data = evt.target?.result;
       const wb = XLSX.read(data, { type: 'binary' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws);
-
       const inserts: any[] = [];
       for (const row of rows) {
         const question_text = String(row['question_text'] || row['Question'] || '').trim();
@@ -356,15 +337,9 @@ function QuestionsTab() {
           inserts.push({ class_id: filterClass, subject_id: filterSubject, question_text, option_a, option_b, option_c, option_d, correct_option });
         }
       }
-
-      if (inserts.length === 0) {
-        setErr('No valid rows. Columns: question_text, option_a, option_b, option_c, option_d, correct_option');
-        setUploading(false);
-        return;
-      }
-
-      const res = await fetch('/api/admin/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inserts) });
-      if (!res.ok) { setErr('Upload failed.'); }
+      if (inserts.length === 0) { setErr('No valid rows. Columns: question_text, option_a, option_b, option_c, option_d, correct_option'); setUploading(false); return; }
+      const { error } = await supabase.from('questions').insert(inserts);
+      if (error) setErr('Upload failed: ' + error.message);
       else { setMsg(`Uploaded ${inserts.length} questions.`); load(); }
       setUploading(false);
     };
@@ -374,9 +349,7 @@ function QuestionsTab() {
 
   async function deleteQuestions(classId: string, subjectId: string) {
     if (!confirm('Delete ALL questions for this class/subject?')) return;
-    const allQ = await fetch('/api/admin/questions').then(r => r.json());
-    const toDelete = allQ.filter((q: any) => q.class_id === classId && q.subject_id === subjectId);
-    await Promise.all(toDelete.map((q: any) => fetch('/api/admin/questions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: q.id }) })));
+    await supabase.from('questions').delete().eq('class_id', classId).eq('subject_id', subjectId);
     setMsg('Questions deleted.'); load();
   }
 
@@ -421,9 +394,7 @@ function QuestionsTab() {
                 </td>
               </tr>
             ))}
-            {counts.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-6 text-gray-400 text-sm">No questions uploaded yet.</td></tr>
-            )}
+            {counts.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-gray-400 text-sm">No questions uploaded yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -439,72 +410,106 @@ function TestsTab() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const [form, setForm] = useState({
+  const [editingTest, setEditingTest] = useState<Test | null>(null);
+
+  const emptyForm = {
     title: '', class_id: '', subject_id: '', test_type: 'CA',
-    duration_minutes: 30, total_questions: 20, start_time: '', end_time: '', test_code: '',
-  });
+    duration_minutes: 30, total_questions: 20,
+    start_time: '', end_time: '', test_code: '',
+  };
+  const [form, setForm] = useState(emptyForm);
 
   async function load() {
-    const [cd, sd, td] = await Promise.all([
-      fetch('/api/admin/classes').then(r => r.json()),
-      fetch('/api/admin/subjects').then(r => r.json()),
-      fetch('/api/admin/tests').then(r => r.json()),
-    ]);
-    if (Array.isArray(cd)) setClasses(cd);
-    if (Array.isArray(sd)) setSubjects(sd);
-    if (Array.isArray(td)) setTests(td);
+    const { data: cd } = await supabase.from('classes').select('*').order('name');
+    const { data: sd } = await supabase.from('subjects').select('*').order('name');
+    const { data: td } = await supabase.from('tests').select('*').order('created_at', { ascending: false });
+    if (cd) setClasses(cd as ClassRecord[]);
+    if (sd) setSubjects(sd as Subject[]);
+    if (td) setTests(td as Test[]);
   }
 
   useEffect(() => { load(); }, []);
 
-  function getClassName(id: string) {
-    const c = classes.find((cl: ClassRecord) => cl.id === id);
-    return c ? c.name : id;
-  }
+  function getClassName(id: string) { return classes.find((cl: ClassRecord) => cl.id === id)?.name ?? id; }
+  function getSubjectName(id: string) { return subjects.find((su: Subject) => su.id === id)?.name ?? id; }
 
-  function getSubjectName(id: string) {
-    const s = subjects.find((su: Subject) => su.id === id);
-    return s ? s.name : id;
-  }
-
-  async function createTest(e: React.FormEvent) {
-    e.preventDefault(); setErr(''); setMsg('');
-    const res = await fetch('/api/admin/tests', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, is_active: false }),
+  function startEdit(t: Test) {
+    setEditingTest(t);
+    setForm({
+      title: t.title,
+      class_id: t.class_id,
+      subject_id: t.subject_id,
+      test_type: t.test_type,
+      duration_minutes: t.duration_minutes,
+      total_questions: t.total_questions,
+      start_time: t.start_time ? t.start_time.slice(0, 16) : '',
+      end_time: t.end_time ? t.end_time.slice(0, 16) : '',
+      test_code: (t as any).test_code ?? '',
     });
-    if (!res.ok) { setErr('Failed to create test.'); return; }
-    setMsg('Test created.');
-    setForm({ title: '', class_id: '', subject_id: '', test_type: 'CA', duration_minutes: 30, total_questions: 20, start_time: '', end_time: '', test_code: '' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelEdit() {
+    setEditingTest(null);
+    setForm(emptyForm);
+    setErr(''); setMsg('');
+  }
+
+  async function saveTest(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(''); setMsg('');
+
+    if (editingTest) {
+      const { error } = await supabase.from('tests').update({ ...form }).eq('id', editingTest.id);
+      if (error) { setErr('Failed to update test: ' + error.message); return; }
+      setMsg('Test updated successfully.');
+      setEditingTest(null);
+    } else {
+      const { error } = await supabase.from('tests').insert([{ ...form, is_active: false }]);
+      if (error) { setErr('Failed to create test: ' + error.message); return; }
+      setMsg('Test created.');
+    }
+
+    setForm(emptyForm);
     load();
   }
 
   async function toggleActive(test: Test) {
-    await fetch('/api/admin/tests', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: test.id, is_active: !test.is_active }),
-    });
+    await supabase.from('tests').update({ is_active: !test.is_active }).eq('id', test.id);
     load();
   }
 
   async function deleteTest(id: string) {
     if (!confirm('Delete this test?')) return;
-    await fetch('/api/admin/tests', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    await supabase.from('tests').delete().eq('id', id);
     load();
+  }
+
+  function formatDateTime(dt: string) {
+    if (!dt) return '—';
+    return new Date(dt).toLocaleString('en-NG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
   return (
     <div className="space-y-6">
-      <div className="card">
-        <SectionTitle>Create Test</SectionTitle>
+      {/* Create / Edit Form */}
+      <div className={`card ${editingTest ? 'border-2 border-quest-accent' : ''}`}>
+        <div className="flex items-center justify-between mb-4">
+          <SectionTitle>{editingTest ? '✏️ Edit Test' : 'Create Test'}</SectionTitle>
+          {editingTest && (
+            <button onClick={cancelEdit} className="text-xs text-gray-500 hover:text-red-600 font-medium">
+              ✕ Cancel Edit
+            </button>
+          )}
+        </div>
         <Alert type="success" msg={msg} />
         <Alert type="error" msg={err} />
-        <form onSubmit={createTest} className="grid sm:grid-cols-2 gap-4">
+
+        <form onSubmit={saveTest} className="grid sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Title</label>
-            <input className="input" placeholder="e.g. First Term CA - Mathematics" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+            <input className="input" placeholder="e.g. First Term CA - Mathematics"
+              value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
@@ -528,33 +533,42 @@ function TestsTab() {
             </select>
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
+            <input className="input font-mono tracking-widest uppercase" placeholder="e.g. BIO2024"
+              value={form.test_code} onChange={(e) => setForm({ ...form, test_code: e.target.value.toUpperCase() })} />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
-            <input type="number" className="input" min={5} value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} required />
+            <input type="number" className="input" min={5}
+              value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Total Questions</label>
-            <input type="number" className="input" min={1} value={form.total_questions} onChange={(e) => setForm({ ...form, total_questions: Number(e.target.value) })} required />
+            <input type="number" className="input" min={1}
+              value={form.total_questions} onChange={(e) => setForm({ ...form, total_questions: Number(e.target.value) })} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-            <input type="datetime-local" className="input" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+            <input type="datetime-local" className="input" value={form.start_time}
+              onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-            <input type="datetime-local" className="input" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
+            <input type="datetime-local" className="input" value={form.end_time}
+              onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
           </div>
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code <span className="text-red-500">*</span></label>
-            <input type="text" className="input font-mono tracking-widest uppercase" placeholder="e.g. ENG2024"
-              value={form.test_code} onChange={e => setForm({ ...form, test_code: e.target.value.toUpperCase() })} required />
-            <p className="text-xs text-gray-400 mt-1">Give this code to students on exam day only.</p>
-          </div>
-          <div className="sm:col-span-2">
-            <button type="submit" className="btn-primary">Create Test</button>
+          <div className="sm:col-span-2 flex gap-3">
+            <button type="submit" className="btn-primary">
+              {editingTest ? 'Save Changes' : 'Create Test'}
+            </button>
+            {editingTest && (
+              <button type="button" onClick={cancelEdit} className="btn-secondary">Cancel</button>
+            )}
           </div>
         </form>
       </div>
 
+      {/* Tests List */}
       <div className="card">
         <SectionTitle>All Tests</SectionTitle>
         <div className="overflow-x-auto">
@@ -565,8 +579,7 @@ function TestsTab() {
                 <th className="px-3 py-2 font-semibold">Class</th>
                 <th className="px-3 py-2 font-semibold">Subject</th>
                 <th className="px-3 py-2 font-semibold">Type</th>
-                <th className="px-3 py-2 font-semibold">Code</th>
-                <th className="px-3 py-2 font-semibold">Duration</th>
+                <th className="px-3 py-2 font-semibold">Window</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold"></th>
               </tr>
@@ -578,22 +591,31 @@ function TestsTab() {
                   <td className="px-3 py-2">{getClassName(t.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(t.subject_id)}</td>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>{t.test_type}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>
+                      {t.test_type}
+                    </span>
                   </td>
-                  <td className="px-3 py-2 font-mono font-bold text-quest-blue text-xs">{t.test_code || '—'}</td>
-                  <td className="px-3 py-2">{t.duration_minutes}m</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">
+                    {t.start_time ? (
+                      <span>{formatDateTime(t.start_time)} → {formatDateTime(t.end_time)}</span>
+                    ) : '—'}
+                  </td>
                   <td className="px-3 py-2">
-                    <button onClick={() => toggleActive(t)} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    <button onClick={() => toggleActive(t)}
+                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                       {t.is_active ? 'Active' : 'Inactive'}
                     </button>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => deleteTest(t.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => startEdit(t)} className="text-quest-blue hover:text-quest-navy text-xs font-medium">Edit</button>
+                      <button onClick={() => deleteTest(t.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {tests.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>
+                <tr><td colSpan={7} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -614,27 +636,18 @@ function ResultsTab() {
   const [filterType, setFilterType] = useState('');
 
   async function load() {
-    const [cd, sd, rd] = await Promise.all([
-      fetch('/api/admin/classes').then(r => r.json()),
-      fetch('/api/admin/subjects').then(r => r.json()),
-      fetch('/api/admin/results').then(r => r.json()),
-    ]);
-    if (Array.isArray(cd)) setClasses(cd);
-    if (Array.isArray(sd)) setSubjects(sd);
-    if (Array.isArray(rd)) setResults(rd);
+    const { data: cd } = await supabase.from('classes').select('*').order('name');
+    const { data: sd } = await supabase.from('subjects').select('*').order('name');
+    const { data: rd } = await supabase.from('results').select('*').order('created_at', { ascending: false });
+    if (cd) setClasses(cd as ClassRecord[]);
+    if (sd) setSubjects(sd as Subject[]);
+    if (rd) setResults(rd as Result[]);
   }
 
   useEffect(() => { load(); }, []);
 
-  function getClassName(id: string) {
-    const c = classes.find((cl: ClassRecord) => cl.id === id);
-    return c ? c.name : id;
-  }
-
-  function getSubjectName(id: string) {
-    const s = subjects.find((su: Subject) => su.id === id);
-    return s ? s.name : id;
-  }
+  function getClassName(id: string) { return classes.find((cl: ClassRecord) => cl.id === id)?.name ?? id; }
+  function getSubjectName(id: string) { return subjects.find((su: Subject) => su.id === id)?.name ?? id; }
 
   const filtered = results.filter((r: Result) => {
     if (filterClass && r.class_id !== filterClass) return false;
@@ -713,7 +726,9 @@ function ResultsTab() {
                     <td className="px-3 py-2">{getClassName(r.class_id)}</td>
                     <td className="px-3 py-2">{getSubjectName(r.subject_id)}</td>
                     <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>{r.test_type}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>
+                        {r.test_type}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-right">{r.score}/{r.total}</td>
                     <td className="px-3 py-2 text-right font-bold">{r.percentage}%</td>
