@@ -39,7 +39,7 @@ export default function TestPage() {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [testData, setTestData] = useState<TestData | null>(null);
   const [showWarning, setShowWarning] = useState(false);
-  const [showStartWarning, setShowStartWarning] = useState(true);
+  const [showStartWarning, setShowStartWarning] = useState(false);
   const [showTimeWarning, setShowTimeWarning] = useState(false);
   const [expired, setExpired] = useState(false);
 
@@ -122,7 +122,6 @@ export default function TestPage() {
       return;
     }
 
-    // Clean up draft AND session on submit
     await Promise.all([
       supabase.from('drafts').delete().eq('test_id', td.id).eq('reg_no', sd.reg_no),
       supabase.from('sessions').delete().eq('test_id', td.id).eq('reg_no', sd.reg_no),
@@ -187,6 +186,7 @@ export default function TestPage() {
       setQuestions(shuffled);
       setTimeLeft(remaining);
       if (remaining <= 60) timeWarningShown.current = true;
+      setShowStartWarning(true);
       setLoading(false);
     }
 
@@ -300,6 +300,14 @@ export default function TestPage() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-quest-light flex items-center justify-center">
+        <div className="text-quest-navy text-lg font-medium">Loading questions...</div>
+      </div>
+    );
+  }
+
   if (showStartWarning) {
     return (
       <div className="min-h-screen bg-quest-navy flex items-center justify-center px-4">
@@ -321,14 +329,6 @@ export default function TestPage() {
             I Understand — Begin Test
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-quest-light flex items-center justify-center">
-        <div className="text-quest-navy text-lg font-medium">Loading questions...</div>
       </div>
     );
   }
@@ -468,7 +468,7 @@ export default function TestPage() {
               const isCurrent = idx === current;
               return (
                 <button key={idx} onClick={() => setCurrent(idx)}
-                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all relative ${
+                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-all ${
                     isCurrent ? 'bg-quest-navy text-white ring-2 ring-quest-navy ring-offset-1'
                     : isFlaggedIdx ? 'bg-amber-400 text-white'
                     : isAnswered ? 'bg-quest-blue text-white'
@@ -481,7 +481,7 @@ export default function TestPage() {
           </div>
           {flaggedCount > 0 && (
             <p className="text-xs text-amber-600 mt-3 font-medium">
-              🚩 {flaggedCount} question{flaggedCount > 1 ? 's' : ''} flagged for review — remember to revisit before submitting.
+              🚩 {flaggedCount} question{flaggedCount > 1 ? 's' : ''} flagged — remember to revisit before submitting.
             </p>
           )}
         </div>
