@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import type { ClassRecord, Subject } from '@/lib/supabase';
 
 export default function StudentLoginPage() {
+  const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [regNo, setRegNo] = useState('');
   const [classId, setClassId] = useState('');
@@ -15,7 +16,6 @@ export default function StudentLoginPage() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
 
   useEffect(() => {
     async function fetchData() {
@@ -31,12 +31,11 @@ export default function StudentLoginPage() {
     e.preventDefault();
     setError('');
     if (!fullName.trim() || !regNo.trim() || !classId || !subjectId || !testCode.trim()) {
-      setError('Please fill in all fields including the test code.');
+      setError('Please fill in all fields.');
       return;
     }
     setLoading(true);
     try {
-      // 1. Verify student exists
       const { data: students, error: studentErr } = await supabase
         .from('students')
         .select('*')
@@ -44,13 +43,13 @@ export default function StudentLoginPage() {
         .eq('class_id', classId);
 
       if (studentErr) throw studentErr;
+
       if (!students || students.length === 0) {
-        setError('Student not found. Check your registration number and class.');
+        setError('Student not found. Please check your registration number and class.');
         setLoading(false);
         return;
       }
 
-      // 2. Check for active test matching code
       const { data: tests, error: testErr } = await supabase
         .from('tests')
         .select('*')
@@ -59,22 +58,21 @@ export default function StudentLoginPage() {
         .eq('subject_id', subjectId);
 
       if (testErr) throw testErr;
+
       if (!tests || tests.length === 0) {
-        setError('No active test found for your class and subject.');
+        setError('No active test found for your class and subject at this time.');
         setLoading(false);
         return;
       }
 
       const test = tests[0];
 
-      // 3. Verify test code
       if (!test.test_code || test.test_code.trim().toUpperCase() !== testCode.trim().toUpperCase()) {
         setError('Incorrect test code. Please ask your teacher for the correct code.');
         setLoading(false);
         return;
       }
 
-      // 4. Check if already taken
       const { data: existing } = await supabase
         .from('results')
         .select('id')
@@ -87,16 +85,17 @@ export default function StudentLoginPage() {
         return;
       }
 
-      // 5. All clear — proceed
-      sessionStorage.setItem('quest_student', JSON.stringify({
+      const studentData = {
         reg_no: regNo.trim(),
         full_name: fullName.trim(),
         class_id: classId,
         subject_id: subjectId,
-      }));
-      sessionStorage.setItem('quest_test', JSON.stringify(test));
-      router.push(`/test/${test.id}`);
+      };
 
+      sessionStorage.setItem('quest_student', JSON.stringify(studentData));
+      sessionStorage.setItem('quest_test', JSON.stringify(test));
+
+      router.push(`/test/${test.id}`);
     } catch (err: any) {
       setError('An error occurred. Please try again.');
     } finally {
@@ -126,47 +125,80 @@ export default function StudentLoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-            <input type="text" className="input" placeholder="Enter your full name"
-              value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+            <input
+              type="text"
+              className="input"
+              placeholder="Enter your full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
-            <input type="text" className="input" placeholder="e.g. QC/2024/001"
-              value={regNo} onChange={(e) => setRegNo(e.target.value)} required />
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. QC/2024/001"
+              value={regNo}
+              onChange={(e) => setRegNo(e.target.value)}
+              required
+            />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
-            <select className="input" value={classId} onChange={(e) => setClassId(e.target.value)} required>
+            <select
+              className="input"
+              value={classId}
+              onChange={(e) => setClassId(e.target.value)}
+              required
+            >
               <option value="">-- Select Class --</option>
               {classes.map((c: ClassRecord) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-            <select className="input" value={subjectId} onChange={(e) => setSubjectId(e.target.value)} required>
+            <select
+              className="input"
+              value={subjectId}
+              onChange={(e) => setSubjectId(e.target.value)}
+              required
+            >
               <option value="">-- Select Subject --</option>
               {subjects.map((s: Subject) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
-            <input type="text" className="input font-mono tracking-widest uppercase"
-              placeholder="Enter code from your teacher"
-              value={testCode} onChange={(e) => setTestCode(e.target.value)} required />
-            <p className="text-xs text-gray-400 mt-1">Ask your teacher for the test code before starting.</p>
+            <input
+              type="text"
+              className="input font-mono tracking-widest uppercase"
+              placeholder="Enter test code"
+              value={testCode}
+              onChange={(e) => setTestCode(e.target.value.toUpperCase())}
+              required
+            />
           </div>
+
           <button type="submit" className="btn-primary w-full mt-2" disabled={loading}>
             {loading ? 'Verifying...' : 'Start Test'}
           </button>
         </form>
       </div>
 
-      <p className="text-xs text-gray-400 mt-6">
+      <p className="text-xs text-gray-400 mt-6 text-center">
         &copy; {new Date().getFullYear()} Quest College. All rights reserved.
+        <br />
+        <span className="text-gray-300">Developed by Adekunle Temitope Olamilekan</span>
       </p>
     </div>
   );
