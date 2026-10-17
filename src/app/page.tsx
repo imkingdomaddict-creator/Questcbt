@@ -36,6 +36,7 @@ export default function StudentLoginPage() {
     }
     setLoading(true);
     try {
+      // Verify student exists
       const { data: students, error: studentErr } = await supabase
         .from('students')
         .select('*')
@@ -50,6 +51,7 @@ export default function StudentLoginPage() {
         return;
       }
 
+      // Check for active test
       const { data: tests, error: testErr } = await supabase
         .from('tests')
         .select('*')
@@ -67,20 +69,29 @@ export default function StudentLoginPage() {
 
       const test = tests[0];
 
-      if (!test.test_code || test.test_code.trim().toUpperCase() !== testCode.trim().toUpperCase()) {
-        setError('Incorrect test code. Please ask your teacher for the correct code.');
+      // Verify test code
+      if (test.test_code && test.test_code.toUpperCase() !== testCode.trim().toUpperCase()) {
+        setError('Invalid test code. Please check with your teacher.');
         setLoading(false);
         return;
       }
 
+      // Check if student already submitted this test
       const { data: existing } = await supabase
         .from('results')
         .select('id')
-        .eq('reg_no', regNo.trim())
-        .eq('test_id', test.id);
+        .eq('test_id', test.id)
+        .eq('reg_no', regNo.trim());
 
       if (existing && existing.length > 0) {
-        setError('You have already taken this test. You cannot retake it.');
+        setError('You have already submitted this test. Results have been recorded.');
+        setLoading(false);
+        return;
+      }
+
+      // Check if test window has expired
+      if (test.end_time && new Date() > new Date(test.end_time)) {
+        setError('The test window has closed. Please contact your teacher.');
         setLoading(false);
         return;
       }
@@ -95,8 +106,14 @@ export default function StudentLoginPage() {
       sessionStorage.setItem('quest_student', JSON.stringify(studentData));
       sessionStorage.setItem('quest_test', JSON.stringify(test));
 
+      // Only set started_at if not already set (prevents reset on re-entry)
+      const existingStart = sessionStorage.getItem('quest_started_at');
+      if (!existingStart) {
+        sessionStorage.setItem('quest_started_at', new Date().toISOString());
+      }
+
       router.push(`/test/${test.id}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -105,6 +122,7 @@ export default function StudentLoginPage() {
 
   return (
     <div className="min-h-screen bg-quest-light flex flex-col items-center justify-center px-4 py-10">
+      {/* Header */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-quest-navy rounded-2xl mb-4">
           <span className="text-white text-2xl font-bold">Q</span>
