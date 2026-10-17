@@ -6,8 +6,6 @@ import { supabase } from '@/lib/supabase';
 import type { ClassRecord, Subject, Student, Test, Result } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 interface QuestionCount {
   class_id: string;
   subject_id: string;
@@ -15,8 +13,6 @@ interface QuestionCount {
   subject_name: string;
   count: number;
 }
-
-// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const router = useRouter();
@@ -68,8 +64,6 @@ export default function AdminPage() {
   );
 }
 
-// ─── Helper Components ───────────────────────────────────────────────────────
-
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="text-lg font-semibold text-quest-navy mb-4">{children}</h2>;
 }
@@ -83,8 +77,6 @@ function Alert({ type, msg }: { type: 'success' | 'error'; msg: string }) {
     }`}>{msg}</div>
   );
 }
-
-// ─── Tab 1: Classes & Subjects ───────────────────────────────────────────────
 
 function ClassesSubjectsTab() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -106,14 +98,21 @@ function ClassesSubjectsTab() {
   async function addClass() {
     if (!newClass.trim()) return;
     const { error } = await supabase.from('classes').insert([{ name: newClass.trim() }]);
-    if (error) { setErr('Failed to add class.'); return; }
+    if (error) { setErr('Failed to add class - maybe duplicate name.'); return; }
     setMsg('Class added.'); setNewClass(''); load();
   }
 
-  async function deleteClass(id: string) {
-    if (!confirm('Delete this class?')) return;
-    await supabase.from('classes').delete().eq('id', id);
-    load();
+  async function deleteClass(id: string, name: string) {
+    if (!confirm(`Delete class "${name}"?`)) return;
+    setErr(''); setMsg('');
+    const { count: studentCount } = await supabase.from('students').select('id', { count: 'exact', head: true }).eq('class_id', id);
+    if (studentCount && studentCount > 0) {
+      setErr(`Cannot delete "${name}" - it has ${studentCount} students. Delete students first.`);
+      return;
+    }
+    const { error } = await supabase.from('classes').delete().eq('id', id);
+    if (error) setErr('Cannot delete: ' + error.message);
+    else { setMsg('Class deleted.'); load(); }
   }
 
   async function addSubject() {
@@ -123,27 +122,29 @@ function ClassesSubjectsTab() {
     setMsg('Subject added.'); setNewSubject(''); load();
   }
 
-  async function deleteSubject(id: string) {
-    if (!confirm('Delete this subject?')) return;
-    await supabase.from('subjects').delete().eq('id', id);
-    load();
+  async function deleteSubject(id: string, name: string) {
+    if (!confirm(`Delete subject "${name}"?`)) return;
+    const { error } = await supabase.from('subjects').delete().eq('id', id);
+    if (error) setErr('Cannot delete subject: ' + error.message);
+    else { setMsg('Subject deleted.'); load(); }
   }
 
   return (
     <div className="grid md:grid-cols-2 gap-6">
       <div className="card">
-        <SectionTitle>Classes</SectionTitle>
+        <SectionTitle>Classes (Protected)</SectionTitle>
         <Alert type="success" msg={msg} />
         <Alert type="error" msg={err} />
         <div className="flex gap-2 mb-4">
           <input className="input flex-1" placeholder="Class name e.g. JSS 1" value={newClass} onChange={(e) => setNewClass(e.target.value)} />
           <button onClick={addClass} className="btn-primary px-4">Add</button>
         </div>
+        <p className="text-xs text-amber-600 mb-2">Classes are protected. You must delete all students in that class first.</p>
         <ul className="space-y-2">
           {classes.map((c: ClassRecord) => (
             <li key={c.id} className="flex items-center justify-between bg-quest-light rounded-lg px-3 py-2">
               <span className="text-sm font-medium text-quest-navy">{c.name}</span>
-              <button onClick={() => deleteClass(c.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+              <button onClick={() => deleteClass(c.id, c.name)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
             </li>
           ))}
           {classes.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No classes yet.</p>}
@@ -160,7 +161,7 @@ function ClassesSubjectsTab() {
           {subjects.map((s: Subject) => (
             <li key={s.id} className="flex items-center justify-between bg-quest-light rounded-lg px-3 py-2">
               <span className="text-sm font-medium text-quest-navy">{s.name}</span>
-              <button onClick={() => deleteSubject(s.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+              <button onClick={() => deleteSubject(s.id, s.name)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
             </li>
           ))}
           {subjects.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No subjects yet.</p>}
@@ -169,8 +170,6 @@ function ClassesSubjectsTab() {
     </div>
   );
 }
-
-// ─── Tab 2: Students ──────────────────────────────────────────────────────────
 
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -224,17 +223,30 @@ function StudentsTab() {
     if (fileRef.current) fileRef.current.value = '';
   }
 
-  async function deleteStudent(id: string) {
-    if (!confirm('Delete this student?')) return;
+  async function deleteStudent(id: string, name: string) {
+    if (!confirm(`Delete student "${name}"? This will also delete their results.`)) return;
+    await supabase.from('results').delete().eq('reg_no', students.find(s=>s.id===id)?.reg_no || '');
     await supabase.from('students').delete().eq('id', id);
-    load();
+    setMsg('Student deleted.'); load();
+  }
+
+  async function deleteAllStudents() {
+    if (!filterClass) { setErr('Select a class to delete all students in that class.'); return; }
+    const className = getClassName(filterClass);
+    if (!confirm(`DELETE ALL STUDENTS in ${className}? This cannot be undone!`)) return;
+    const toDelete = students.filter(s=>s.class_id===filterClass);
+    for (const s of toDelete) {
+      await supabase.from('results').delete().eq('reg_no', s.reg_no);
+    }
+    await supabase.from('students').delete().eq('class_id', filterClass);
+    setMsg(`Deleted ${toDelete.length} students in ${className}.`); load();
   }
 
   const filtered = filterClass ? students.filter((s: Student) => s.class_id === filterClass) : students;
 
   return (
     <div className="card">
-      <SectionTitle>Students</SectionTitle>
+      <SectionTitle>Students - Deletable</SectionTitle>
       <Alert type="success" msg={msg} />
       <Alert type="error" msg={err} />
       <div className="flex flex-wrap gap-3 mb-5">
@@ -247,16 +259,16 @@ function StudentsTab() {
           {classes.map((c: ClassRecord) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <span className="flex items-center text-sm text-gray-500">{filtered.length} student(s)</span>
+        {filterClass && <button onClick={deleteAllStudents} className="btn-secondary bg-red-50 text-red-600 border-red-200">Delete All in Class</button>}
       </div>
-      <p className="text-xs text-gray-400 mb-3">Excel columns: <code>reg_no</code>, <code>full_name</code>, <code>class</code></p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-quest-light text-quest-navy text-left">
-              <th className="px-3 py-2 font-semibold rounded-tl-lg">Name</th>
+              <th className="px-3 py-2 font-semibold">Name</th>
               <th className="px-3 py-2 font-semibold">Reg No</th>
               <th className="px-3 py-2 font-semibold">Class</th>
-              <th className="px-3 py-2 font-semibold rounded-tr-lg"></th>
+              <th className="px-3 py-2 font-semibold"></th>
             </tr>
           </thead>
           <tbody>
@@ -266,7 +278,7 @@ function StudentsTab() {
                 <td className="px-3 py-2 font-mono text-xs">{s.reg_no}</td>
                 <td className="px-3 py-2">{getClassName(s.class_id)}</td>
                 <td className="px-3 py-2 text-right">
-                  <button onClick={() => deleteStudent(s.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                  <button onClick={() => deleteStudent(s.id, s.full_name)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
                 </td>
               </tr>
             ))}
@@ -277,8 +289,6 @@ function StudentsTab() {
     </div>
   );
 }
-
-// ─── Tab 3: Questions ─────────────────────────────────────────────────────────
 
 function QuestionsTab() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -337,7 +347,7 @@ function QuestionsTab() {
           inserts.push({ class_id: filterClass, subject_id: filterSubject, question_text, option_a, option_b, option_c, option_d, correct_option });
         }
       }
-      if (inserts.length === 0) { setErr('No valid rows. Columns: question_text, option_a, option_b, option_c, option_d, correct_option'); setUploading(false); return; }
+      if (inserts.length === 0) { setErr('No valid rows.'); setUploading(false); return; }
       const { error } = await supabase.from('questions').insert(inserts);
       if (error) setErr('Upload failed: ' + error.message);
       else { setMsg(`Uploaded ${inserts.length} questions.`); load(); }
@@ -348,14 +358,15 @@ function QuestionsTab() {
   }
 
   async function deleteQuestions(classId: string, subjectId: string) {
-    if (!confirm('Delete ALL questions for this class/subject?')) return;
-    await supabase.from('questions').delete().eq('class_id', classId).eq('subject_id', subjectId);
-    setMsg('Questions deleted.'); load();
+    if (!confirm('Delete ALL questions for this class/subject? This is permanent!')) return;
+    const { error } = await supabase.from('questions').delete().eq('class_id', classId).eq('subject_id', subjectId);
+    if (error) setErr(error.message);
+    else { setMsg('Questions deleted.'); load(); }
   }
 
   return (
     <div className="card">
-      <SectionTitle>Questions</SectionTitle>
+      <SectionTitle>Questions - Deletable (AI Test Data)</SectionTitle>
       <Alert type="success" msg={msg} />
       <Alert type="error" msg={err} />
       <div className="flex flex-wrap gap-3 mb-2">
@@ -372,8 +383,7 @@ function QuestionsTab() {
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
         </label>
       </div>
-      <p className="text-xs text-gray-400 mb-5">Select class &amp; subject first. Excel columns: <code>question_text, option_a, option_b, option_c, option_d, correct_option</code></p>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto mt-4">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-quest-light text-quest-navy text-left">
@@ -390,7 +400,7 @@ function QuestionsTab() {
                 <td className="px-3 py-2">{c.subject_name}</td>
                 <td className="px-3 py-2 text-right font-semibold">{c.count}</td>
                 <td className="px-3 py-2 text-right">
-                  <button onClick={() => deleteQuestions(c.class_id, c.subject_id)} className="text-red-500 hover:text-red-700 text-xs">Delete All</button>
+                  <button onClick={() => deleteQuestions(c.class_id, c.subject_id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete All</button>
                 </td>
               </tr>
             ))}
@@ -401,8 +411,6 @@ function QuestionsTab() {
     </div>
   );
 }
-
-// ─── Tab 4: Tests ─────────────────────────────────────────────────────────────
 
 function TestsTab() {
   const [tests, setTests] = useState<Test[]>([]);
@@ -458,31 +466,46 @@ function TestsTab() {
   async function saveTest(e: React.FormEvent) {
     e.preventDefault();
     setErr(''); setMsg('');
-
+    const payload = {
+      ...form,
+      test_code: form.test_code.toUpperCase().trim(),
+      start_time: form.start_time ? new Date(form.start_time).toISOString() : new Date().toISOString(),
+      end_time: form.end_time ? new Date(form.end_time).toISOString() : new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+    };
     if (editingTest) {
-      const { error } = await supabase.from('tests').update({ ...form }).eq('id', editingTest.id);
-      if (error) { setErr('Failed to update test: ' + error.message); return; }
-      setMsg('Test updated successfully.');
-      setEditingTest(null);
+      const { error } = await supabase.from('tests').update(payload).eq('id', editingTest.id);
+      if (error) { setErr('Failed to update: ' + error.message); return; }
+      setMsg('Test updated.'); setEditingTest(null);
     } else {
-      const { error } = await supabase.from('tests').insert([{ ...form, is_active: false }]);
-      if (error) { setErr('Failed to create test: ' + error.message); return; }
-      setMsg('Test created.');
+      const { error } = await supabase.from('tests').insert([{ ...payload, is_active: true }]);
+      if (error) { setErr('Failed to create: ' + error.message); return; }
+      setMsg('Test created and activated.');
     }
-
-    setForm(emptyForm);
-    load();
+    setForm(emptyForm); load();
   }
 
   async function toggleActive(test: Test) {
-    await supabase.from('tests').update({ is_active: !test.is_active }).eq('id', test.id);
+    const newActive = !test.is_active;
+    let update: any = { is_active: newActive };
+    if (newActive) {
+      const end = test.end_time ? new Date(test.end_time) : null;
+      if (!end || end < new Date()) {
+        update.start_time = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        update.end_time = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+      }
+    }
+    await supabase.from('tests').update(update).eq('id', test.id);
     load();
   }
 
-  async function deleteTest(id: string) {
-    if (!confirm('Delete this test?')) return;
-    await supabase.from('tests').delete().eq('id', id);
-    load();
+  async function deleteTest(id: string, title: string) {
+    if (!confirm(`Delete test "${title}"? This will delete ALL results for this test permanently!`)) return;
+    setErr(''); setMsg('');
+    await supabase.from('results').delete().eq('test_id', id);
+    await supabase.from('results').delete().eq('test_code', (tests.find(t=>t.id===id) as any)?.test_code);
+    const { error } = await supabase.from('tests').delete().eq('id', id);
+    if (error) setErr('Delete failed: ' + error.message);
+    else { setMsg('Test and its results deleted.'); load(); }
   }
 
   function formatDateTime(dt: string) {
@@ -492,24 +515,17 @@ function TestsTab() {
 
   return (
     <div className="space-y-6">
-      {/* Create / Edit Form */}
       <div className={`card ${editingTest ? 'border-2 border-quest-accent' : ''}`}>
         <div className="flex items-center justify-between mb-4">
           <SectionTitle>{editingTest ? '✏️ Edit Test' : 'Create Test'}</SectionTitle>
-          {editingTest && (
-            <button onClick={cancelEdit} className="text-xs text-gray-500 hover:text-red-600 font-medium">
-              ✕ Cancel Edit
-            </button>
-          )}
+          {editingTest && <button onClick={cancelEdit} className="text-xs text-gray-500 hover:text-red-600 font-medium">✕ Cancel</button>}
         </div>
         <Alert type="success" msg={msg} />
         <Alert type="error" msg={err} />
-
         <form onSubmit={saveTest} className="grid sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Title</label>
-            <input className="input" placeholder="e.g. First Term CA - Mathematics"
-              value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+            <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
@@ -533,52 +549,42 @@ function TestsTab() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
-            <input className="input font-mono tracking-widest uppercase" placeholder="e.g. BIO2024"
-              value={form.test_code} onChange={(e) => setForm({ ...form, test_code: e.target.value.toUpperCase() })} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code (Students need this)</label>
+            <input className="input font-mono uppercase" placeholder="ENG001" value={form.test_code} onChange={(e) => setForm({ ...form, test_code: e.target.value.toUpperCase() })} required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
-            <input type="number" className="input" min={5}
-              value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} required />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (mins)</label>
+            <input type="number" className="input" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Total Questions</label>
-            <input type="number" className="input" min={1}
-              value={form.total_questions} onChange={(e) => setForm({ ...form, total_questions: Number(e.target.value) })} required />
+            <input type="number" className="input" value={form.total_questions} onChange={(e) => setForm({ ...form, total_questions: Number(e.target.value) })} required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-            <input type="datetime-local" className="input" value={form.start_time}
-              onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
+            <input type="datetime-local" className="input" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-            <input type="datetime-local" className="input" value={form.end_time}
-              onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
+            <input type="datetime-local" className="input" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
           </div>
           <div className="sm:col-span-2 flex gap-3">
-            <button type="submit" className="btn-primary">
-              {editingTest ? 'Save Changes' : 'Create Test'}
-            </button>
-            {editingTest && (
-              <button type="button" onClick={cancelEdit} className="btn-secondary">Cancel</button>
-            )}
+            <button type="submit" className="btn-primary">{editingTest ? 'Save Changes' : 'Create Test'}</button>
+            {editingTest && <button type="button" onClick={cancelEdit} className="btn-secondary">Cancel</button>}
           </div>
         </form>
       </div>
 
-      {/* Tests List */}
       <div className="card">
-        <SectionTitle>All Tests</SectionTitle>
+        <SectionTitle>All Tests - Deletable</SectionTitle>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-quest-light text-quest-navy text-left">
                 <th className="px-3 py-2 font-semibold">Title</th>
+                <th className="px-3 py-2 font-semibold">Code</th>
                 <th className="px-3 py-2 font-semibold">Class</th>
                 <th className="px-3 py-2 font-semibold">Subject</th>
-                <th className="px-3 py-2 font-semibold">Type</th>
                 <th className="px-3 py-2 font-semibold">Window</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold"></th>
@@ -588,35 +594,22 @@ function TestsTab() {
               {tests.map((t: Test) => (
                 <tr key={t.id} className="border-b border-blue-50 hover:bg-blue-50/30">
                   <td className="px-3 py-2 font-medium">{t.title}</td>
+                  <td className="px-3 py-2"><span className="bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded font-mono font-bold text-xs">{(t as any).test_code || '—'}</span></td>
                   <td className="px-3 py-2">{getClassName(t.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(t.subject_id)}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{t.start_time ? `${formatDateTime(t.start_time)} → ${formatDateTime(t.end_time)}` : '—'}</td>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>
-                      {t.test_type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-gray-500">
-                    {t.start_time ? (
-                      <span>{formatDateTime(t.start_time)} → {formatDateTime(t.end_time)}</span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => toggleActive(t)}
-                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                      {t.is_active ? 'Active' : 'Inactive'}
-                    </button>
+                    <button onClick={() => toggleActive(t)} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{t.is_active ? 'Active' : 'Inactive'}</button>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => startEdit(t)} className="text-quest-blue hover:text-quest-navy text-xs font-medium">Edit</button>
-                      <button onClick={() => deleteTest(t.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                      <button onClick={() => startEdit(t)} className="text-quest-blue text-xs font-medium">Edit</button>
+                      <button onClick={() => deleteTest(t.id, t.title)} className="text-red-500 text-xs font-bold">Delete</button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {tests.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>
-              )}
+              {tests.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-gray-400 text-sm">No tests yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -625,8 +618,6 @@ function TestsTab() {
   );
 }
 
-// ─── Tab 5: Results ───────────────────────────────────────────────────────────
-
 function ResultsTab() {
   const [results, setResults] = useState<Result[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -634,6 +625,7 @@ function ResultsTab() {
   const [filterClass, setFilterClass] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [msg, setMsg] = useState('');
 
   async function load() {
     const { data: cd } = await supabase.from('classes').select('*').order('name');
@@ -656,8 +648,22 @@ function ResultsTab() {
     return true;
   });
 
-  const broadsheet = Array.from(new Map(filtered.map((r: Result) => [r.reg_no, r])).values());
+  const broadsheet = Array.from(new Map(filtered.map((r: Result) => [r.reg_no + '_' + r.subject_id + '_' + r.test_type, r])).values());
   broadsheet.sort((a: any, b: any) => b.percentage - a.percentage);
+
+  async function deleteResult(id: string) {
+    if (!confirm('Delete this result?')) return;
+    await supabase.from('results').delete().eq('id', id);
+    setMsg('Result deleted.'); load();
+  }
+
+  async function deleteAllFiltered() {
+    if (filtered.length === 0) return;
+    if (!confirm(`Delete ALL ${filtered.length} filtered results? Cannot be undone!`)) return;
+    const ids = filtered.map(r=>r.id);
+    await supabase.from('results').delete().in('id', ids);
+    setMsg(`Deleted ${ids.length} results.`); load();
+  }
 
   function exportBroadsheet() {
     const rows = broadsheet.map((r: Result, idx: number) => ({
@@ -676,7 +682,8 @@ function ResultsTab() {
   return (
     <div className="space-y-6">
       <div className="card">
-        <SectionTitle>Results</SectionTitle>
+        <SectionTitle>Results - Deletable</SectionTitle>
+        <Alert type="success" msg={msg} />
         <div className="flex flex-wrap gap-3 mb-0">
           <select className="input w-auto" value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
             <option value="">All Classes</option>
@@ -692,6 +699,7 @@ function ResultsTab() {
             <option value="Exam">Exam</option>
           </select>
           <span className="flex items-center text-sm text-gray-500">{filtered.length} result(s)</span>
+          {filtered.length > 0 && <button onClick={deleteAllFiltered} className="btn-secondary bg-red-50 text-red-600 border-red-200 text-xs">Delete All Filtered</button>}
         </div>
       </div>
 
@@ -709,40 +717,25 @@ function ResultsTab() {
                 <th className="px-3 py-2 font-semibold">Reg No</th>
                 <th className="px-3 py-2 font-semibold">Class</th>
                 <th className="px-3 py-2 font-semibold">Subject</th>
-                <th className="px-3 py-2 font-semibold">Type</th>
-                <th className="px-3 py-2 font-semibold text-right">Score</th>
-                <th className="px-3 py-2 font-semibold text-right">%</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-3 py-2 font-semibold">Score</th>
+                <th className="px-3 py-2 font-semibold">%</th>
+                <th className="px-3 py-2 font-semibold"></th>
               </tr>
             </thead>
             <tbody>
-              {broadsheet.map((r: Result, i: number) => {
-                const passed = r.percentage >= 50;
-                return (
-                  <tr key={r.id} className={`border-b border-blue-50 ${i % 2 === 0 ? 'bg-white' : 'bg-blue-50/30'}`}>
-                    <td className="px-3 py-2 text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium text-quest-navy">{r.student_name}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.reg_no}</td>
-                    <td className="px-3 py-2">{getClassName(r.class_id)}</td>
-                    <td className="px-3 py-2">{getSubjectName(r.subject_id)}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.test_type === 'Exam' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-quest-blue'}`}>
-                        {r.test_type}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">{r.score}/{r.total}</td>
-                    <td className="px-3 py-2 text-right font-bold">{r.percentage}%</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {passed ? 'Pass' : 'Fail'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {broadsheet.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-gray-400 text-sm">No results found.</td></tr>
-              )}
+              {broadsheet.map((r: Result, i: number) => (
+                <tr key={r.id} className="border-b border-blue-50">
+                  <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                  <td className="px-3 py-2 font-medium text-quest-navy">{r.student_name}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{r.reg_no}</td>
+                  <td className="px-3 py-2">{getClassName(r.class_id)}</td>
+                  <td className="px-3 py-2">{getSubjectName(r.subject_id)}</td>
+                  <td className="px-3 py-2 text-right">{r.score}/{r.total}</td>
+                  <td className="px-3 py-2 text-right font-bold">{r.percentage}%</td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => deleteResult(r.id)} className="text-red-500 text-xs font-bold">Delete</button></td>
+                </tr>
+              ))}
+              {broadsheet.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-gray-400 text-sm">No results found.</td></tr>}
             </tbody>
           </table>
         </div>
