@@ -78,6 +78,7 @@ function Alert({ type, msg }: { type: 'success' | 'error'; msg: string }) {
   );
 }
 
+// ── Classes & Subjects ─────────────────────────────────────────────────────
 function ClassesSubjectsTab() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -171,6 +172,7 @@ function ClassesSubjectsTab() {
   );
 }
 
+// ── Students ───────────────────────────────────────────────────────────────
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -214,32 +216,46 @@ function StudentsTab() {
         if (reg_no && full_name && class_id) inserts.push({ reg_no, full_name, class_id });
       }
       if (inserts.length === 0) { setErr('No valid rows found. Ensure columns: reg_no, full_name, class'); setUploading(false); return; }
-      const { error } = await supabase.from('students').upsert(inserts, { onConflict: 'reg_no' });
-      if (error) setErr('Upload failed: ' + error.message);
-      else { setMsg(`Uploaded ${inserts.length} students.`); load(); }
+
+      // Use API route (service role) to bypass RLS
+      const res = await fetch('/api/admin-students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: inserts }),
+      });
+      const json = await res.json();
+      if (!res.ok) setErr('Upload failed: ' + json.error);
+      else { setMsg(`Uploaded ${json.count} students.`); load(); }
       setUploading(false);
     };
     reader.readAsBinaryString(file);
     if (fileRef.current) fileRef.current.value = '';
   }
 
-  async function deleteStudent(id: string, name: string) {
+  async function deleteStudent(id: string, reg_no: string, name: string) {
     if (!confirm(`Delete student "${name}"? This will also delete their results.`)) return;
-    await supabase.from('results').delete().eq('reg_no', students.find(s=>s.id===id)?.reg_no || '');
-    await supabase.from('students').delete().eq('id', id);
-    setMsg('Student deleted.'); load();
+    const res = await fetch('/api/admin-students', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, reg_no }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Delete failed: ' + json.error);
+    else { setMsg('Student deleted.'); load(); }
   }
 
   async function deleteAllStudents() {
     if (!filterClass) { setErr('Select a class to delete all students in that class.'); return; }
     const className = getClassName(filterClass);
     if (!confirm(`DELETE ALL STUDENTS in ${className}? This cannot be undone!`)) return;
-    const toDelete = students.filter(s=>s.class_id===filterClass);
-    for (const s of toDelete) {
-      await supabase.from('results').delete().eq('reg_no', s.reg_no);
-    }
-    await supabase.from('students').delete().eq('class_id', filterClass);
-    setMsg(`Deleted ${toDelete.length} students in ${className}.`); load();
+    const res = await fetch('/api/admin-students', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ class_id: filterClass }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Delete failed: ' + json.error);
+    else { setMsg(`Deleted all students in ${className}.`); load(); }
   }
 
   const filtered = filterClass ? students.filter((s: Student) => s.class_id === filterClass) : students;
@@ -278,7 +294,7 @@ function StudentsTab() {
                 <td className="px-3 py-2 font-mono text-xs">{s.reg_no}</td>
                 <td className="px-3 py-2">{getClassName(s.class_id)}</td>
                 <td className="px-3 py-2 text-right">
-                  <button onClick={() => deleteStudent(s.id, s.full_name)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
+                  <button onClick={() => deleteStudent(s.id, s.reg_no, s.full_name)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
                 </td>
               </tr>
             ))}
@@ -290,6 +306,7 @@ function StudentsTab() {
   );
 }
 
+// ── Questions ──────────────────────────────────────────────────────────────
 function QuestionsTab() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -412,6 +429,7 @@ function QuestionsTab() {
   );
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────
 function TestsTab() {
   const [tests, setTests] = useState<Test[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -466,45 +484,49 @@ function TestsTab() {
   async function saveTest(e: React.FormEvent) {
     e.preventDefault();
     setErr(''); setMsg('');
-    const payload = {
+    const payload: any = {
       ...form,
       test_code: form.test_code.toUpperCase().trim(),
       start_time: form.start_time ? new Date(form.start_time).toISOString() : new Date().toISOString(),
       end_time: form.end_time ? new Date(form.end_time).toISOString() : new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
     };
-    if (editingTest) {
-      const { error } = await supabase.from('tests').update(payload).eq('id', editingTest.id);
-      if (error) { setErr('Failed to update: ' + error.message); return; }
-      setMsg('Test updated.'); setEditingTest(null);
-    } else {
-      const { error } = await supabase.from('tests').insert([{ ...payload, is_active: true }]);
-      if (error) { setErr('Failed to create: ' + error.message); return; }
-      setMsg('Test created and activated.');
-    }
-    setForm(emptyForm); load();
+    if (editingTest) payload.id = editingTest.id;
+
+    const res = await fetch('/api/admin-tests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) { setErr('Failed: ' + json.error); return; }
+    setMsg(editingTest ? 'Test updated.' : 'Test created and activated.');
+    setEditingTest(null);
+    setForm(emptyForm);
+    load();
   }
 
   async function toggleActive(test: Test) {
     const newActive = !test.is_active;
-    let update: any = { is_active: newActive };
-    if (newActive) {
-      const end = test.end_time ? new Date(test.end_time) : null;
-      if (!end || end < new Date()) {
-        update.start_time = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        update.end_time = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-      }
-    }
-    await supabase.from('tests').update(update).eq('id', test.id);
-    load();
+    const res = await fetch('/api/admin-tests', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: test.id, is_active: newActive, end_time: test.end_time }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Toggle failed: ' + json.error);
+    else load();
   }
 
   async function deleteTest(id: string, title: string) {
     if (!confirm(`Delete test "${title}"? This will delete ALL results for this test permanently!`)) return;
     setErr(''); setMsg('');
-    await supabase.from('results').delete().eq('test_id', id);
-    await supabase.from('results').delete().eq('test_code', (tests.find(t=>t.id===id) as any)?.test_code);
-    const { error } = await supabase.from('tests').delete().eq('id', id);
-    if (error) setErr('Delete failed: ' + error.message);
+    const res = await fetch('/api/admin-tests', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Delete failed: ' + json.error);
     else { setMsg('Test and its results deleted.'); load(); }
   }
 
@@ -549,8 +571,15 @@ function TestsTab() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Test Code (Students need this)</label>
-            <input className="input font-mono uppercase" placeholder="ENG001" value={form.test_code} onChange={(e) => setForm({ ...form, test_code: e.target.value.toUpperCase() })} required />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Test Code <span className="text-gray-400 font-normal">(optional — leave blank for no code)</span>
+            </label>
+            <input
+              className="input font-mono uppercase"
+              placeholder="e.g. ENG001 (optional)"
+              value={form.test_code}
+              onChange={(e) => setForm({ ...form, test_code: e.target.value.toUpperCase() })}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Duration (mins)</label>
@@ -594,12 +623,22 @@ function TestsTab() {
               {tests.map((t: Test) => (
                 <tr key={t.id} className="border-b border-blue-50 hover:bg-blue-50/30">
                   <td className="px-3 py-2 font-medium">{t.title}</td>
-                  <td className="px-3 py-2"><span className="bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded font-mono font-bold text-xs">{(t as any).test_code || '—'}</span></td>
+                  <td className="px-3 py-2">
+                    {(t as any).test_code
+                      ? <span className="bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded font-mono font-bold text-xs">{(t as any).test_code}</span>
+                      : <span className="text-gray-300 text-xs">none</span>}
+                  </td>
                   <td className="px-3 py-2">{getClassName(t.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(t.subject_id)}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{t.start_time ? `${formatDateTime(t.start_time)} → ${formatDateTime(t.end_time)}` : '—'}</td>
                   <td className="px-3 py-2">
-                    <button onClick={() => toggleActive(t)} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{t.is_active ? 'Active' : 'Inactive'}</button>
+                    <button
+                      onClick={() => toggleActive(t)}
+                      title={t.is_active ? 'Click to deactivate' : 'Click to activate (extends window if expired)'}
+                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                    >
+                      {t.is_active ? 'Active' : 'Inactive'}
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -618,6 +657,7 @@ function TestsTab() {
   );
 }
 
+// ── Results ────────────────────────────────────────────────────────────────
 function ResultsTab() {
   const [results, setResults] = useState<Result[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -626,6 +666,7 @@ function ResultsTab() {
   const [filterSubject, setFilterSubject] = useState('');
   const [filterType, setFilterType] = useState('');
   const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
 
   async function load() {
     const { data: cd } = await supabase.from('classes').select('*').order('name');
@@ -653,16 +694,28 @@ function ResultsTab() {
 
   async function deleteResult(id: string) {
     if (!confirm('Delete this result?')) return;
-    await supabase.from('results').delete().eq('id', id);
-    setMsg('Result deleted.'); load();
+    const res = await fetch('/api/admin-results', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Delete failed: ' + json.error);
+    else { setMsg('Result deleted.'); load(); }
   }
 
   async function deleteAllFiltered() {
     if (filtered.length === 0) return;
     if (!confirm(`Delete ALL ${filtered.length} filtered results? Cannot be undone!`)) return;
-    const ids = filtered.map(r=>r.id);
-    await supabase.from('results').delete().in('id', ids);
-    setMsg(`Deleted ${ids.length} results.`); load();
+    const ids = filtered.map(r => r.id);
+    const res = await fetch('/api/admin-results', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const json = await res.json();
+    if (!res.ok) setErr('Delete failed: ' + json.error);
+    else { setMsg(`Deleted ${json.count} results.`); load(); }
   }
 
   function exportBroadsheet() {
@@ -684,6 +737,7 @@ function ResultsTab() {
       <div className="card">
         <SectionTitle>Results - Deletable</SectionTitle>
         <Alert type="success" msg={msg} />
+        <Alert type="error" msg={err} />
         <div className="flex flex-wrap gap-3 mb-0">
           <select className="input w-auto" value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
             <option value="">All Classes</option>
