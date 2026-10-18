@@ -9,6 +9,17 @@ function generateToken() {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
+export default function StudentLogi'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import type { ClassRecord, Subject } from '@/lib/supabase';
+
+function generateToken() {
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
 export default function StudentLoginPage() {
   const router = useRouter();
   const [fullName, setFullName] = useState('');
@@ -93,11 +104,13 @@ export default function StudentLoginPage() {
         return;
       }
 
-      // ── 5. Verify test code ───────────────────────────────────────────
-      if (test.test_code && test.test_code.toUpperCase() !== testCode.trim().toUpperCase()) {
-        setError('Invalid test code. Please check with your teacher.');
-        setLoading(false);
-        return;
+      // ── 5. Verify test code (only if the test has one set) ───────────────
+      if (test.test_code && test.test_code.trim() !== '') {
+        if (test.test_code.toUpperCase() !== testCode.trim().toUpperCase()) {
+          setError('Invalid test code. Please check with your teacher.');
+          setLoading(false);
+          return;
+        }
       }
 
       // ── 6. No-retake check ────────────────────────────────────────────
@@ -114,6 +127,7 @@ export default function StudentLoginPage() {
       }
 
       // ── 7. IP / Device lock ───────────────────────────────────────────
+      // Retrieve or create a session token for this device
       const myToken = sessionStorage.getItem('quest_session_token') || generateToken();
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
 
@@ -137,6 +151,7 @@ export default function StudentLoginPage() {
         }
       }
 
+      // Register or refresh session
       await supabase.from('sessions').upsert(
         {
           test_id: test.id,
@@ -160,6 +175,7 @@ export default function StudentLoginPage() {
       sessionStorage.setItem('quest_student', JSON.stringify(studentData));
       sessionStorage.setItem('quest_test', JSON.stringify(test));
 
+      // Only set started_at on first entry; preserve on re-entry
       const existingStart = sessionStorage.getItem('quest_started_at');
       if (!existingStart) {
         sessionStorage.setItem('quest_started_at', new Date().toISOString());
@@ -195,6 +211,7 @@ export default function StudentLoginPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Full Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
             <input
@@ -207,8 +224,11 @@ export default function StudentLoginPage() {
             />
           </div>
 
+          {/* Registration Number */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Registration Number
+            </label>
             <input
               type="text"
               className="input"
@@ -219,6 +239,7 @@ export default function StudentLoginPage() {
             />
           </div>
 
+          {/* Class */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
             <select
@@ -229,11 +250,14 @@ export default function StudentLoginPage() {
             >
               <option value="">-- Select Class --</option>
               {classes.map((c: ClassRecord) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
             </select>
           </div>
 
+          {/* Subject */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
             <select
@@ -244,11 +268,14 @@ export default function StudentLoginPage() {
             >
               <option value="">-- Select Subject --</option>
               {subjects.map((s: Subject) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
               ))}
             </select>
           </div>
 
+          {/* Test Code */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
             <input
@@ -259,10 +286,16 @@ export default function StudentLoginPage() {
               onChange={(e) => setTestCode(e.target.value.toUpperCase())}
               required
             />
-            <p className="text-xs text-gray-400 mt-1">Ask your teacher for the test code before starting.</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Ask your teacher for the test code before starting.
+            </p>
           </div>
 
-          <button type="submit" className="btn-primary w-full mt-2" disabled={loading}>
+          <button
+            type="submit"
+            className="btn-primary w-full mt-2"
+            disabled={loading}
+          >
             {loading ? 'Verifying...' : 'Start Test'}
           </button>
         </form>
