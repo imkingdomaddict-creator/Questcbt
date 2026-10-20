@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import type { ClassRecord, Subject, Student, Test, Result, Question } from '@/lib/supabase';
+import type { ClassRecord, Subject, Student, Test, Result } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
 // ── Types ──────────────────────────────────────────────────────────────────
