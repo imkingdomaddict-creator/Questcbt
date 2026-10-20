@@ -10,13 +10,13 @@ function getServiceClient() {
   );
 }
 
-async function isAdmin() {
-  const cookieStore = await cookies();
+function isAdmin() {
+  const cookieStore = cookies();
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, ...payload } = await req.json();
   const supabase = getServiceClient();
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, is_active, end_time } = await req.json();
   const supabase = getServiceClient();
 
@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const supabase = getServiceClient();
