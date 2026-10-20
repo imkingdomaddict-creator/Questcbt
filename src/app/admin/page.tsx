@@ -16,7 +16,7 @@ interface QuestionCount {
 }
 
 interface EditableQuestion {
-  id?: string; // existing DB id, undefined if new
+  id?: string;
   question_text: string;
   option_a: string;
   option_b: string;
@@ -24,8 +24,8 @@ interface EditableQuestion {
   option_d: string;
   correct_option: string;
   image_url?: string | null;
-  image_preview?: string | null; // local preview only
-  image_file?: File | null; // pending upload
+  image_preview?: string | null;
+  image_file?: File | null;
 }
 
 interface BroadRow {
@@ -36,7 +36,6 @@ interface BroadRow {
   [key: string]: Result | string | undefined;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 function typeColor(t: string) {
   const l = t.toLowerCase();
   if (l.includes('exam')) return 'bg-orange-100 text-orange-700 border border-orange-200';
@@ -44,7 +43,6 @@ function typeColor(t: string) {
   return 'bg-gray-100 text-gray-600 border border-gray-200';
 }
 
-// Compress image in browser to WebP before upload
 async function compressImage(file: File, maxW = 800, quality = 0.75): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -70,9 +68,7 @@ async function compressImage(file: File, maxW = 800, quality = 0.75): Promise<Bl
 
 function emptyQuestion(): EditableQuestion {
   return { question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_option: 'A', image_url: null, image_preview: null, image_file: null };
-}
-
-export default function AdminPage() {
+} export default function AdminPage() {
   const router = useRouter();
   const [tab, setTab] = useState(0);
   const [storageUsed, setStorageUsed] = useState<number | null>(null);
@@ -164,7 +160,6 @@ function Alert({ type, msg }: { type: 'success' | 'error'; msg: string }) {
   );
 }
 
-// ── Classes & Subjects ─────────────────────────────────────────────────────
 function ClassesSubjectsTab() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -252,7 +247,6 @@ function ClassesSubjectsTab() {
   );
 }
 
-// ── Students ───────────────────────────────────────────────────────────────
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -321,8 +315,7 @@ function StudentsTab() {
     if (!filterClass) { setErr('Select a class first.'); return; }
     if (!confirm(`DELETE ALL STUDENTS in ${getClassName(filterClass)}? Cannot be undone!`)) return;
     const res = await fetch('/api/admin-students', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ class_id: filterClass }),
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },      body: JSON.stringify({ class_id: filterClass }),
     });
     const json = await res.json();
     if (!res.ok) setErr('Delete failed: ' + json.error);
@@ -377,7 +370,6 @@ function StudentsTab() {
   );
 }
 
-// ── Single Question Editor Row ─────────────────────────────────────────────
 function QuestionEditor({
   q, index, onChange, onDelete, onImagePick,
 }: {
@@ -408,8 +400,6 @@ function QuestionEditor({
         <span className="text-xs font-bold text-gray-400 mt-1">Q{index + 1}</span>
         <button onClick={onDelete} className="text-red-400 hover:text-red-600 text-xs font-bold shrink-0">✕ Remove</button>
       </div>
-
-      {/* Question text — supports HTML via contentEditable for tables/formatting */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Question Text</label>
         <textarea
@@ -421,8 +411,6 @@ function QuestionEditor({
         />
         <p className="text-xs text-gray-400 mt-0.5">For a table or diagram, use the image option below.</p>
       </div>
-
-      {/* Image */}
       <div>
         {previewSrc ? (
           <div className="relative inline-block">
@@ -436,8 +424,6 @@ function QuestionEditor({
           </label>
         )}
       </div>
-
-      {/* Options */}
       <div className="grid sm:grid-cols-2 gap-2">
         {(['a', 'b', 'c', 'd'] as const).map(opt => (
           <div key={opt} className="flex items-center gap-2">
@@ -453,8 +439,6 @@ function QuestionEditor({
           </div>
         ))}
       </div>
-
-      {/* Correct answer */}
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-xs font-medium text-gray-600">Correct Answer:</span>
         {['A', 'B', 'C', 'D'].map(opt => (
@@ -472,7 +456,6 @@ function QuestionEditor({
   );
 }
 
-// ── Questions Tab ──────────────────────────────────────────────────────────
 function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -482,8 +465,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // Questions in editor
   const [questions, setQuestions] = useState<EditableQuestion[]>([]);
   const [uploading, setUploading] = useState(false);
   const excelRef = useRef<HTMLInputElement>(null);
@@ -508,7 +489,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   }
   useEffect(() => { load(); }, []);
 
-  // Excel upload
   async function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -562,7 +542,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   }
 
   async function handleImagePick(i: number, file: File) {
-    // Show preview immediately
     const preview = URL.createObjectURL(file);
     setQuestions(prev => prev.map((q, idx) => idx === i ? { ...q, image_file: file, image_preview: preview } : q));
   }
@@ -585,18 +564,13 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   async function saveAll() {
     if (!filterClass || !filterSubject) { setErr('Select a class and subject first.'); return; }
     if (questions.length === 0) { setErr('No questions to save.'); return; }
-
-    // Validate
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q.question_text.trim()) { setErr(`Question ${i + 1} has no text.`); return; }
       if (!q.option_a.trim() || !q.option_b.trim()) { setErr(`Question ${i + 1} must have at least options A and B.`); return; }
       if (!['A','B','C','D'].includes(q.correct_option)) { setErr(`Question ${i + 1} has invalid correct option.`); return; }
     }
-
     setSaving(true); setErr(''); setMsg('');
-
-    // Upload pending images
     const withUrls: EditableQuestion[] = [];
     for (const q of questions) {
       if (q.image_file) {
@@ -606,7 +580,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
         withUrls.push({ ...q, image_preview: null, image_file: null });
       }
     }
-
     const payload = withUrls.map(q => ({
       question_text: q.question_text,
       option_a: q.option_a,
@@ -616,7 +589,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
       correct_option: q.correct_option,
       image_url: q.image_url || null,
     }));
-
     const res = await fetch('/api/admin-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -647,13 +619,10 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
 
   return (
     <div className="space-y-6">
-      {/* Upload + editor section */}
       <div className="card">
         <SectionTitle>Questions Editor</SectionTitle>
         <Alert type="success" msg={msg} />
         <Alert type="error" msg={err} />
-
-        {/* Class + Subject selectors */}
         <div className="flex flex-wrap gap-3 mb-4">
           <select className="input w-auto" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
             <option value="">Select Class</option>
@@ -664,78 +633,48 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-
         {!canAct && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700 mb-4">
             Select a class and subject above to upload or add questions.
           </div>
-        )}
-
-        {/* Action buttons */}
+        )}        {/* Action buttons */}
         <div className="flex flex-wrap gap-3 mb-4">
           <label className={`btn-secondary cursor-pointer ${!canAct ? 'opacity-50 pointer-events-none' : ''}`}>
             {uploading ? 'Reading Excel...' : '📊 Upload Excel'}
             <input ref={excelRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelUpload} disabled={!canAct} />
           </label>
-          <button
-            onClick={addBlankQuestion}
-            className={`btn-secondary ${!canAct ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!canAct}
-          >
+          <button onClick={addBlankQuestion} className={`btn-secondary ${!canAct ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={!canAct}>
             ✏️ Add Question Manually
           </button>
           {questions.length > 0 && (
-            <button onClick={() => setQuestions([])} className="btn-secondary text-red-600 border-red-200 bg-red-50">
-              🗑 Clear All
-            </button>
+            <button onClick={() => setQuestions([])} className="btn-secondary text-red-600 border-red-200 bg-red-50">🗑 Clear All</button>
           )}
         </div>
-
-        {/* Excel format hint */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
           <p className="font-semibold mb-1">Excel columns (row 1 must be header):</p>
           <p className="font-mono">question_text | option_a | option_b | option_c | option_d | correct_option</p>
           <p className="mt-1">correct_option must be A, B, C or D only. Images cannot be in Excel — add them manually after uploading.</p>
         </div>
-
-        {/* Question list */}
         {questions.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-quest-navy">{questions.length} question(s) — Review, edit, then Save</p>
-              <button
-                onClick={saveAll}
-                disabled={saving || !canAct}
-                className="btn-primary px-5"
-              >
+              <button onClick={saveAll} disabled={saving || !canAct} className="btn-primary px-5">
                 {saving ? 'Saving...' : `💾 Save All ${questions.length} Questions`}
               </button>
             </div>
             <p className="text-xs text-amber-600">⚠️ Saving will replace ALL existing questions for this class/subject.</p>
             <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
               {questions.map((q, i) => (
-                <QuestionEditor
-                  key={i}
-                  q={q}
-                  index={i}
-                  onChange={updated => updateQuestion(i, updated)}
-                  onDelete={() => deleteQuestion(i)}
-                  onImagePick={file => handleImagePick(i, file)}
-                />
+                <QuestionEditor key={i} q={q} index={i} onChange={updated => updateQuestion(i, updated)} onDelete={() => deleteQuestion(i)} onImagePick={file => handleImagePick(i, file)} />
               ))}
             </div>
-            <button
-              onClick={saveAll}
-              disabled={saving || !canAct}
-              className="btn-primary w-full mt-2"
-            >
+            <button onClick={saveAll} disabled={saving || !canAct} className="btn-primary w-full mt-2">
               {saving ? 'Saving...' : `💾 Save All ${questions.length} Questions`}
             </button>
           </div>
         )}
       </div>
-
-      {/* Question Banks table */}
       <div className="card">
         <SectionTitle>Question Banks</SectionTitle>
         <div className="overflow-x-auto">
@@ -768,7 +707,6 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   );
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────
 function TestsTab() {
   const [tests, setTests] = useState<Test[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -776,12 +714,7 @@ function TestsTab() {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [editingTest, setEditingTest] = useState<Test | null>(null);
-
-  const emptyForm = {
-    title: '', class_id: '', subject_id: '', test_type: 'CA 1',
-    duration_minutes: 30, total_questions: 20, total_marks: 20,
-    start_time: '', end_time: '', test_code: '',
-  };
+  const emptyForm = { title: '', class_id: '', subject_id: '', test_type: 'CA 1', duration_minutes: 30, total_questions: 20, total_marks: 20, start_time: '', end_time: '', test_code: '' };
   const [form, setForm] = useState(emptyForm);
 
   async function load() {
@@ -799,14 +732,7 @@ function TestsTab() {
 
   function startEdit(t: Test) {
     setEditingTest(t);
-    setForm({
-      title: t.title, class_id: t.class_id, subject_id: t.subject_id, test_type: t.test_type,
-      duration_minutes: t.duration_minutes, total_questions: t.total_questions,
-      total_marks: (t as any).total_marks ?? t.total_questions,
-      start_time: t.start_time ? t.start_time.slice(0, 16) : '',
-      end_time: t.end_time ? t.end_time.slice(0, 16) : '',
-      test_code: (t as any).test_code ?? '',
-    });
+    setForm({ title: t.title, class_id: t.class_id, subject_id: t.subject_id, test_type: t.test_type, duration_minutes: t.duration_minutes, total_questions: t.total_questions, total_marks: (t as any).total_marks ?? t.total_questions, start_time: t.start_time ? t.start_time.slice(0, 16) : '', end_time: t.end_time ? t.end_time.slice(0, 16) : '', test_code: (t as any).test_code ?? '' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -814,18 +740,9 @@ function TestsTab() {
 
   async function saveTest(e: React.FormEvent) {
     e.preventDefault(); setErr(''); setMsg('');
-    const payload: any = {
-      ...form,
-      test_code: form.test_code.toUpperCase().trim(),
-      start_time: form.start_time ? new Date(form.start_time).toISOString() : new Date().toISOString(),
-      end_time: form.end_time ? new Date(form.end_time).toISOString() : new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    };
+    const payload: any = { ...form, test_code: form.test_code.toUpperCase().trim(), start_time: form.start_time ? new Date(form.start_time).toISOString() : new Date().toISOString(), end_time: form.end_time ? new Date(form.end_time).toISOString() : new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString() };
     if (editingTest) payload.id = editingTest.id;
-
-    const res = await fetch('/api/admin-tests', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetch('/api/admin-tests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const json = await res.json();
     if (!res.ok) { setErr('Failed: ' + json.error); return; }
     setMsg(editingTest ? 'Test updated.' : 'Test created.');
@@ -833,20 +750,14 @@ function TestsTab() {
   }
 
   async function toggleActive(test: Test) {
-    const res = await fetch('/api/admin-tests', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: test.id, is_active: !test.is_active, end_time: test.end_time }),
-    });
+    const res = await fetch('/api/admin-tests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: test.id, is_active: !test.is_active, end_time: test.end_time }) });
     if (!res.ok) setErr('Toggle failed');
     else load();
   }
 
   async function deleteTest(id: string, title: string) {
     if (!confirm(`Delete test "${title}"? ALL results for this test will also be deleted!`)) return;
-    const res = await fetch('/api/admin-tests', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
+    const res = await fetch('/api/admin-tests', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     const json = await res.json();
     if (!res.ok) setErr('Delete failed: ' + json.error);
     else { setMsg('Test deleted.'); load(); }
@@ -889,16 +800,8 @@ function TestsTab() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Test Type</label>
-            <input
-              className="input"
-              list="test-type-list"
-              value={form.test_type}
-              onChange={e => setForm({ ...form, test_type: e.target.value })}
-              placeholder="e.g. CA 1, CA 2, Exam"
-            />
-            <datalist id="test-type-list">
-              {testTypeOptions.map(t => <option key={t} value={t} />)}
-            </datalist>
+            <input className="input" list="test-type-list" value={form.test_type} onChange={e => setForm({ ...form, test_type: e.target.value })} placeholder="e.g. CA 1, CA 2, Exam" />
+            <datalist id="test-type-list">{testTypeOptions.map(t => <option key={t} value={t} />)}</datalist>
             <p className="text-xs text-gray-400 mt-0.5">Type freely or pick a suggestion.</p>
           </div>
           <div>
@@ -932,7 +835,6 @@ function TestsTab() {
           </div>
         </form>
       </div>
-
       <div className="card">
         <SectionTitle>All Tests</SectionTitle>
         <div className="overflow-x-auto">
@@ -954,24 +856,13 @@ function TestsTab() {
               {tests.map(t => (
                 <tr key={t.id} className="border-b border-blue-50 hover:bg-blue-50/30">
                   <td className="px-3 py-2 font-medium max-w-[160px] truncate">{t.title}</td>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${typeColor(t.test_type)}`}>{t.test_type}</span>
-                  </td>
-                  <td className="px-3 py-2">
-                    {(t as any).test_code
-                      ? <span className="bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded font-mono font-bold text-xs">{(t as any).test_code}</span>
-                      : <span className="text-gray-300 text-xs">none</span>}
-                  </td>
+                  <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${typeColor(t.test_type)}`}>{t.test_type}</span></td>
+                  <td className="px-3 py-2">{(t as any).test_code ? <span className="bg-yellow-100 text-yellow-800 border border-yellow-200 px-2 py-0.5 rounded font-mono font-bold text-xs">{(t as any).test_code}</span> : <span className="text-gray-300 text-xs">none</span>}</td>
                   <td className="px-3 py-2">{getClassName(t.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(t.subject_id)}</td>
                   <td className="px-3 py-2 text-xs">{(t as any).total_marks ?? t.total_questions}/{t.total_questions}q</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{t.start_time ? `${formatDT(t.start_time)} → ${formatDT(t.end_time)}` : '—'}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => toggleActive(t)}
-                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {t.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
+                  <td className="px-3 py-2"><button onClick={() => toggleActive(t)} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{t.is_active ? 'Active' : 'Inactive'}</button></td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => startEdit(t)} className="text-quest-blue text-xs font-medium">Edit</button>
@@ -989,7 +880,6 @@ function TestsTab() {
   );
 }
 
-// ── Results ────────────────────────────────────────────────────────────────
 function ResultsTab() {
   const [results, setResults] = useState<Result[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
@@ -1023,7 +913,6 @@ function ResultsTab() {
   });
 
   const testTypes = Array.from(new Set(filtered.map(r => r.test_type))).sort();
-
   const broadMap: Record<string, BroadRow> = {};
   filtered.forEach(r => {
     const key = `${r.reg_no}__${r.subject_id}`;
@@ -1034,10 +923,7 @@ function ResultsTab() {
 
   async function deleteResult(id: string) {
     if (!confirm('Delete this result?')) return;
-    const res = await fetch('/api/admin-results', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
+    const res = await fetch('/api/admin-results', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     if (!res.ok) setErr('Delete failed');
     else { setMsg('Result deleted.'); load(); }
   }
@@ -1046,10 +932,7 @@ function ResultsTab() {
     if (filtered.length === 0) return;
     if (!confirm(`Delete ALL ${filtered.length} filtered results?`)) return;
     const ids = filtered.map(r => r.id);
-    const res = await fetch('/api/admin-results', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
+    const res = await fetch('/api/admin-results', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
     const json = await res.json();
     if (!res.ok) setErr('Delete failed: ' + json.error);
     else { setMsg(`Deleted ${json.count} results.`); load(); }
@@ -1064,11 +947,7 @@ function ResultsTab() {
   function exportBroadsheet() {
     const rows = broadsheet.map((row, i) => {
       const out: any = { '#': i + 1, 'Name': row.student_name, 'Reg No': row.reg_no, 'Class': getClassName(row.class_id), 'Subject': getSubjectName(row.subject_id) };
-      testTypes.forEach(tt => {
-        const r = row[tt] as Result | undefined;
-        out[`${tt} Score`] = r ? `${r.score}/${r.total}` : '';
-        out[`${tt} %`] = r ? `${r.percentage}%` : '';
-      });
+      testTypes.forEach(tt => { const r = row[tt] as Result | undefined; out[`${tt} Score`] = r ? `${r.score}/${r.total}` : ''; out[`${tt} %`] = r ? `${r.percentage}%` : ''; });
       return out;
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1077,7 +956,6 @@ function ResultsTab() {
     XLSX.writeFile(wb, 'quest_broadsheet.xlsx');
   }
 
-  // Flexible result sheet
   const sheetResults = results.filter(r => r.class_id === sheetClass && r.subject_id === sheetSubject);
   const availableTypes = Array.from(new Set(sheetResults.map(r => r.test_type))).sort();
 
@@ -1087,24 +965,14 @@ function ResultsTab() {
 
   const checkedTypes = availableTypes.filter(t => sheetChecked.has(t));
   const sheetStudentMap: Record<string, Record<string, Result>> = {};
-  sheetResults.forEach(r => {
-    if (!sheetStudentMap[r.reg_no]) sheetStudentMap[r.reg_no] = {};
-    sheetStudentMap[r.reg_no][r.test_type] = r;
-  });
+  sheetResults.forEach(r => { if (!sheetStudentMap[r.reg_no]) sheetStudentMap[r.reg_no] = {}; sheetStudentMap[r.reg_no][r.test_type] = r; });
   const sheetRows = Object.entries(sheetStudentMap).map(([reg_no, typeMap]) => {
     const anyResult = Object.values(typeMap)[0];
     return { reg_no, student_name: anyResult?.student_name ?? '', typeMap };
   }).sort((a, b) => a.student_name.localeCompare(b.student_name));
 
-  function sheetTotal(typeMap: Record<string, Result>) {
-    return checkedTypes.reduce((sum, tt) => sum + (typeMap[tt]?.score ?? 0), 0);
-  }
-  function sheetMaxTotal() {
-    return checkedTypes.reduce((sum, tt) => {
-      const r = sheetResults.find(r => r.test_type === tt);
-      return sum + (r?.total ?? 0);
-    }, 0);
-  }
+  function sheetTotal(typeMap: Record<string, Result>) { return checkedTypes.reduce((sum, tt) => sum + (typeMap[tt]?.score ?? 0), 0); }
+  function sheetMaxTotal() { return checkedTypes.reduce((sum, tt) => { const r = sheetResults.find(r => r.test_type === tt); return sum + (r?.total ?? 0); }, 0); }
 
   function exportFlexSheet() {
     const rows = sheetRows.map((row, i) => {
@@ -1138,7 +1006,6 @@ function ResultsTab() {
           {filtered.length > 0 && <button onClick={deleteAllFiltered} className="btn-secondary bg-red-50 text-red-600 border-red-200 text-xs">Delete All Filtered</button>}
         </div>
       </div>
-
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-quest-navy">Broadsheet</h3>
@@ -1153,11 +1020,7 @@ function ResultsTab() {
                 <th className="px-3 py-2">Reg No</th>
                 <th className="px-3 py-2">Class</th>
                 <th className="px-3 py-2">Subject</th>
-                {testTypes.map(tt => (
-                  <th key={tt} className="px-3 py-2 whitespace-nowrap">
-                    <span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span>
-                  </th>
-                ))}
+                {testTypes.map(tt => <th key={tt} className="px-3 py-2 whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span></th>)}
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -1169,16 +1032,10 @@ function ResultsTab() {
                   <td className="px-3 py-2 font-mono text-xs">{row.reg_no}</td>
                   <td className="px-3 py-2">{getClassName(row.class_id)}</td>
                   <td className="px-3 py-2">{getSubjectName(row.subject_id)}</td>
-                  {testTypes.map(tt => (
-                    <td key={tt} className="px-3 py-2">{scoreCell(row[tt] as Result | undefined)}</td>
-                  ))}
+                  {testTypes.map(tt => <td key={tt} className="px-3 py-2">{scoreCell(row[tt] as Result | undefined)}</td>)}
                   <td className="px-3 py-2 text-right">
                     <div className="flex gap-1 justify-end flex-wrap">
-                      {testTypes.map(tt => {
-                        const r = row[tt] as Result | undefined;
-                        if (!r) return null;
-                        return <button key={tt} onClick={() => deleteResult(r.id)} className="text-red-400 text-xs hover:text-red-600">Del {tt}</button>;
-                      })}
+                      {testTypes.map(tt => { const r = row[tt] as Result | undefined; if (!r) return null; return <button key={tt} onClick={() => deleteResult(r.id)} className="text-red-400 text-xs hover:text-red-600">Del {tt}</button>; })}
                     </div>
                   </td>
                 </tr>
@@ -1188,13 +1045,10 @@ function ResultsTab() {
           </table>
         </div>
       </div>
-
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-quest-navy">Flexible Result Sheet</h3>
-          <button onClick={() => setSheetMode(!sheetMode)} className="btn-secondary text-xs py-1.5 px-3">
-            {sheetMode ? 'Hide' : 'Build Result Sheet'}
-          </button>
+          <button onClick={() => setSheetMode(!sheetMode)} className="btn-secondary text-xs py-1.5 px-3">{sheetMode ? 'Hide' : 'Build Result Sheet'}</button>
         </div>
         {sheetMode && (
           <div>
@@ -1208,11 +1062,7 @@ function ResultsTab() {
                 {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-
-            {sheetClass && sheetSubject && availableTypes.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">No results for this class/subject combination.</p>
-            )}
-
+            {sheetClass && sheetSubject && availableTypes.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No results for this class/subject combination.</p>}
             {availableTypes.length > 0 && (
               <>
                 <div className="flex flex-wrap gap-3 mb-4 p-3 bg-blue-50 rounded-lg">
@@ -1224,7 +1074,6 @@ function ResultsTab() {
                     </label>
                   ))}
                 </div>
-
                 {checkedTypes.length > 0 && (
                   <>
                     <div className="overflow-x-auto">
@@ -1234,11 +1083,7 @@ function ResultsTab() {
                             <th className="px-3 py-2">#</th>
                             <th className="px-3 py-2">Name</th>
                             <th className="px-3 py-2">Reg No</th>
-                            {checkedTypes.map(tt => (
-                              <th key={tt} className="px-3 py-2 whitespace-nowrap">
-                                <span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span>
-                              </th>
-                            ))}
+                            {checkedTypes.map(tt => <th key={tt} className="px-3 py-2 whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span></th>)}
                             {checkedTypes.length > 1 && <th className="px-3 py-2 font-semibold">Total</th>}
                           </tr>
                         </thead>
@@ -1248,13 +1093,134 @@ function ResultsTab() {
                               <td className="px-3 py-2 text-gray-400">{i + 1}</td>
                               <td className="px-3 py-2 font-medium text-quest-navy">{row.student_name}</td>
                               <td className="px-3 py-2 font-mono text-xs">{row.reg_no}</td>
-                              {checkedTypes.map(tt => {
-                                const r = row.typeMap[tt];
-                                return <td key={tt} className="px-3 py-2">{r ? `${r.score}/${r.total}` : '—'}</td>;
-                              })}
-                              {checkedTypes.length > 1 && (
-                                <td className="px-3 py-2 font-bold text-quest-navy">{sheetTotal(row.typeMap)}/{sheetMaxTotal()}</td>
-                              )}
+                              {checkedTypes.map(tt => { const r = row.typeMap[tt]; return <td key={tt} className="px-3 py-2">{r ? `${r.score}/${r.total}` : '—'}</td>; })}
+                              {checkedTypes.length > 1 && <td className="px-3 py-2 font-bold text-quest-navy">{sheetTotal(row.typeMap)}/{sheetMaxTotal()}</td>}
+                            </tr>
+                          ))}
+                          {sheetRows.length === 0 && <tr><td colSpan={3 + checkedTypes.length + (checkedTypes.length > 1 ? 1 : 0)} className="text-center py-6 text-gray-400">No data.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-3 mt-3">
+                      <button onClick={exportFlexSheet} className="btn-secondary text-sm py-1.5 px-4">Export Excel</button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}  return (
+    <div className="space-y-6">
+      <div className="card">
+        <SectionTitle>Results</SectionTitle>
+        <Alert type="success" msg={msg} />
+        <Alert type="error" msg={err} />
+        <div className="flex flex-wrap gap-3 mb-2">
+          <select className="input w-auto" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
+            <option value="">All Classes</option>
+            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select className="input w-auto" value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
+            <option value="">All Subjects</option>
+            {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <span className="flex items-center text-sm text-gray-500">{broadsheet.length} student(s)</span>
+          {filtered.length > 0 && <button onClick={deleteAllFiltered} className="btn-secondary bg-red-50 text-red-600 border-red-200 text-xs">Delete All Filtered</button>}
+        </div>
+      </div>
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-quest-navy">Broadsheet</h3>
+          <button onClick={exportBroadsheet} className="btn-secondary text-sm py-1.5 px-4">Export Excel</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-quest-navy text-white text-left">
+                <th className="px-3 py-2">#</th>
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Reg No</th>
+                <th className="px-3 py-2">Class</th>
+                <th className="px-3 py-2">Subject</th>
+                {testTypes.map(tt => <th key={tt} className="px-3 py-2 whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span></th>)}
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {broadsheet.map((row, i) => (
+                <tr key={`${row.reg_no}_${row.subject_id}`} className="border-b border-blue-50 hover:bg-blue-50/30">
+                  <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                  <td className="px-3 py-2 font-medium text-quest-navy">{row.student_name}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{row.reg_no}</td>
+                  <td className="px-3 py-2">{getClassName(row.class_id)}</td>
+                  <td className="px-3 py-2">{getSubjectName(row.subject_id)}</td>
+                  {testTypes.map(tt => <td key={tt} className="px-3 py-2">{scoreCell(row[tt] as Result | undefined)}</td>)}
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex gap-1 justify-end flex-wrap">
+                      {testTypes.map(tt => { const r = row[tt] as Result | undefined; if (!r) return null; return <button key={tt} onClick={() => deleteResult(r.id)} className="text-red-400 text-xs hover:text-red-600">Del {tt}</button>; })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {broadsheet.length === 0 && <tr><td colSpan={6 + testTypes.length} className="text-center py-8 text-gray-400 text-sm">No results found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-quest-navy">Flexible Result Sheet</h3>
+          <button onClick={() => setSheetMode(!sheetMode)} className="btn-secondary text-xs py-1.5 px-3">{sheetMode ? 'Hide' : 'Build Result Sheet'}</button>
+        </div>
+        {sheetMode && (
+          <div>
+            <div className="flex flex-wrap gap-3 mb-4">
+              <select className="input w-auto" value={sheetClass} onChange={e => { setSheetClass(e.target.value); setSheetChecked(new Set()); }}>
+                <option value="">Select Class</option>
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select className="input w-auto" value={sheetSubject} onChange={e => { setSheetSubject(e.target.value); setSheetChecked(new Set()); }}>
+                <option value="">Select Subject</option>
+                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            {sheetClass && sheetSubject && availableTypes.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No results for this class/subject combination.</p>}
+            {availableTypes.length > 0 && (
+              <>
+                <div className="flex flex-wrap gap-3 mb-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm font-medium text-quest-navy w-full mb-1">Select test types to include:</p>
+                  {availableTypes.map(tt => (
+                    <label key={tt} className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" className="rounded" checked={sheetChecked.has(tt)} onChange={() => toggleSheetType(tt)} />
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${typeColor(tt)}`}>{tt}</span>
+                    </label>
+                  ))}
+                </div>
+                {checkedTypes.length > 0 && (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-quest-navy text-white text-left">
+                            <th className="px-3 py-2">#</th>
+                            <th className="px-3 py-2">Name</th>
+                            <th className="px-3 py-2">Reg No</th>
+                            {checkedTypes.map(tt => <th key={tt} className="px-3 py-2 whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded text-xs ${typeColor(tt)}`}>{tt}</span></th>)}
+                            {checkedTypes.length > 1 && <th className="px-3 py-2 font-semibold">Total</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sheetRows.map((row, i) => (
+                            <tr key={row.reg_no} className="border-b border-blue-50">
+                              <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                              <td className="px-3 py-2 font-medium text-quest-navy">{row.student_name}</td>
+                              <td className="px-3 py-2 font-mono text-xs">{row.reg_no}</td>
+                              {checkedTypes.map(tt => { const r = row.typeMap[tt]; return <td key={tt} className="px-3 py-2">{r ? `${r.score}/${r.total}` : '—'}</td>; })}
+                              {checkedTypes.length > 1 && <td className="px-3 py-2 font-bold text-quest-navy">{sheetTotal(row.typeMap)}/{sheetMaxTotal()}</td>}
                             </tr>
                           ))}
                           {sheetRows.length === 0 && <tr><td colSpan={3 + checkedTypes.length + (checkedTypes.length > 1 ? 1 : 0)} className="text-center py-6 text-gray-400">No data.</td></tr>}
