@@ -10,13 +10,13 @@ function getServiceClient() {
   );
 }
 
-async function isAdmin() {
-  const cookieStore = await cookies();
+function isAdmin() {
+  const cookieStore = cookies();
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { students } = await req.json();
   if (!Array.isArray(students) || students.length === 0)
     return NextResponse.json({ error: 'No students provided' }, { status: 400 });
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, reg_no, class_id } = await req.json();
   const supabase = getServiceClient();
 
