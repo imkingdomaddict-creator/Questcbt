@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true });
-  response.cookies.set('quest_admin', 'ok', {
+  response.cookies.set('admin_auth', 'true', {
     httpOnly: true,
     path: '/',
     maxAge: 60 * 60 * 8,
