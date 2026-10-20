@@ -25,6 +25,8 @@ export default function StudentLoginPage() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // After login — active tests for this student's class
   const [activeTests, setActiveTests] = useState<Test[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
@@ -52,6 +54,7 @@ export default function StudentLoginPage() {
     }
     setLoading(true);
     try {
+      // Verify student
       const { data: students, error: sErr } = await supabase
         .from('students')
         .select('*')
@@ -63,6 +66,8 @@ export default function StudentLoginPage() {
         setLoading(false);
         return;
       }
+
+      // Get active tests for this class
       const { data: tests, error: tErr } = await supabase
         .from('tests')
         .select('*')
@@ -70,33 +75,41 @@ export default function StudentLoginPage() {
         .eq('class_id', classId)
         .order('test_type');
       if (tErr) throw tErr;
+
       if (!tests || tests.length === 0) {
         setError('No active tests for your class right now. Check back later.');
         setLoading(false);
         return;
       }
+
+      // Filter out expired tests
       const now = new Date();
       const validTests = (tests as Test[]).filter(t => {
         if (t.start_time && now < new Date(t.start_time)) return false;
         if (t.end_time && now > new Date(t.end_time)) return false;
         return true;
       });
+
       if (validTests.length === 0) {
         setError('No tests are currently open. The window may have closed or not started yet.');
         setLoading(false);
         return;
       }
+
+      // Filter out tests already completed by this student
       const { data: doneResults } = await supabase
         .from('results')
         .select('test_id')
         .eq('reg_no', regNo.trim());
       const doneIds = new Set((doneResults || []).map((r: any) => r.test_id));
       const availTests = validTests.filter(t => !doneIds.has(t.id));
+
       if (availTests.length === 0) {
         setError('You have already completed all available tests for your class.');
         setLoading(false);
         return;
       }
+
       setActiveTests(availTests);
       setStep('select-test');
     } catch (ex) {
@@ -109,12 +122,16 @@ export default function StudentLoginPage() {
   async function handleStartTest() {
     if (!selectedTest) return;
     setStartError(''); setStarting(true);
+
+    // Re-verify window
     const now = new Date();
     if (selectedTest.end_time && now > new Date(selectedTest.end_time)) {
       setStartError('The test window has closed.');
       setStarting(false);
       return;
     }
+
+    // Check test code
     if ((selectedTest as any).test_code && (selectedTest as any).test_code.trim() !== '') {
       if ((selectedTest as any).test_code.toUpperCase() !== testCode.trim().toUpperCase()) {
         setStartError('Invalid test code. Check with your teacher.');
@@ -122,6 +139,8 @@ export default function StudentLoginPage() {
         return;
       }
     }
+
+    // No-retake
     const { data: existing } = await supabase
       .from('results')
       .select('id')
@@ -132,6 +151,8 @@ export default function StudentLoginPage() {
       setStarting(false);
       return;
     }
+
+    // Session lock
     const myToken = sessionStorage.getItem('quest_session_token') || generateToken();
     const twoMinsAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: existingSession } = await supabase
@@ -140,6 +161,7 @@ export default function StudentLoginPage() {
       .eq('test_id', selectedTest.id)
       .eq('reg_no', regNo.trim())
       .single();
+
     if (existingSession) {
       const isRecent = new Date(existingSession.last_seen) > new Date(twoMinsAgo);
       const isSame = existingSession.session_token === myToken;
@@ -149,19 +171,23 @@ export default function StudentLoginPage() {
         return;
       }
     }
+
     await supabase.from('sessions').upsert({
       test_id: selectedTest.id, reg_no: regNo.trim(),
       session_token: myToken, last_seen: new Date().toISOString(),
     }, { onConflict: 'test_id,reg_no' });
     sessionStorage.setItem('quest_session_token', myToken);
+
     sessionStorage.setItem('quest_student', JSON.stringify({ reg_no: regNo.trim(), full_name: fullName.trim(), class_id: classId, subject_id: selectedTest.subject_id }));
     sessionStorage.setItem('quest_test', JSON.stringify(selectedTest));
     if (!sessionStorage.getItem('quest_started_at')) {
       sessionStorage.setItem('quest_started_at', new Date().toISOString());
     }
+
     router.push(`/test/${selectedTest.id}`);
   }
 
+  // Group active tests by subject
   const testsBySubject: Record<string, Test[]> = {};
   activeTests.forEach(t => {
     if (!testsBySubject[t.subject_id]) testsBySubject[t.subject_id] = [];
@@ -214,17 +240,29 @@ export default function StudentLoginPage() {
             </div>
             <p className="text-sm text-gray-500">Welcome, <span className="font-medium text-quest-navy">{fullName}</span>. Select the test you want to take.</p>
           </div>
+
           {startError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{startError}</div>}
+
+          {/* Tests grouped by subject */}
           {Object.entries(testsBySubject).map(([subjId, tests]) => (
             <div key={subjId} className="card mb-4">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">{getSubjectName(subjId)}</p>
               <div className="space-y-2">
                 {tests.map(test => (
-                  <button key={test.id} onClick={() => { setSelectedTest(test); setTestCode(''); setStartError(''); }}
-                    className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${selectedTest?.id === test.id ? 'border-quest-blue bg-blue-50' : 'border-blue-100 bg-white hover:border-blue-300'}`}>
+                  <button
+                    key={test.id}
+                    onClick={() => { setSelectedTest(test); setTestCode(''); setStartError(''); }}
+                    className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                      selectedTest?.id === test.id
+                        ? 'border-quest-blue bg-blue-50'
+                        : 'border-blue-100 bg-white hover:border-blue-300'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold mb-1 ${typeColor(test.test_type)}`}>{test.test_type}</span>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold mb-1 ${typeColor(test.test_type)}`}>
+                          {test.test_type}
+                        </span>
                         <p className="text-sm font-semibold text-quest-navy">{test.title}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{test.duration_minutes} mins · {test.total_questions} questions</p>
                       </div>
@@ -239,6 +277,8 @@ export default function StudentLoginPage() {
               </div>
             </div>
           ))}
+
+          {/* Test code + start */}
           {selectedTest && (
             <div className="card">
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -249,12 +289,20 @@ export default function StudentLoginPage() {
                   {selectedTest.duration_minutes} mins &nbsp;·&nbsp; {selectedTest.total_questions} questions
                 </p>
               </div>
+
               {(selectedTest as any).test_code && (selectedTest as any).test_code.trim() !== '' && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
-                  <input type="text" className="input font-mono tracking-widest uppercase" placeholder="Enter test code from your teacher" value={testCode} onChange={e => setTestCode(e.target.value.toUpperCase())} />
+                  <input
+                    type="text"
+                    className="input font-mono tracking-widest uppercase"
+                    placeholder="Enter test code from your teacher"
+                    value={testCode}
+                    onChange={e => setTestCode(e.target.value.toUpperCase())}
+                  />
                 </div>
               )}
+
               <button onClick={handleStartTest} className="btn-primary w-full" disabled={starting}>
                 {starting ? 'Starting...' : 'Start Test →'}
               </button>
