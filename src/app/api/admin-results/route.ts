@@ -10,13 +10,13 @@ function getServiceClient() {
   );
 }
 
-async function isAdmin() {
-  const cookieStore = await cookies();
+function isAdmin() {
+  const cookieStore = cookies();
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!(await isAdmin())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, ids } = await req.json();
   const supabase = getServiceClient();
 
