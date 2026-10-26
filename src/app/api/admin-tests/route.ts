@@ -15,6 +15,7 @@ function isAdmin() {
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
+// POST /api/admin-tests  — create or update a test
 export async function POST(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, ...payload } = await req.json();
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// PATCH /api/admin-tests  — toggle is_active (and extend window if needed)
 export async function PATCH(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, is_active, end_time } = await req.json();
@@ -50,6 +52,7 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true, update });
 }
 
+// DELETE /api/admin-tests  — delete test + all its results
 export async function DELETE(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await req.json();
