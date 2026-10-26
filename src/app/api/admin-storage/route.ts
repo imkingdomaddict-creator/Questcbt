@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
 
 function getServiceClient() {
   return createClient(
@@ -15,24 +15,27 @@ function isAdmin() {
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const supabase = getServiceClient();
 
-  try {
-    const supabase = getServiceClient();
-    const { data: files } = await supabase.storage
+  let totalBytes = 0;
+  let offset = 0;
+  const limit = 1000;
+
+  while (true) {
+    const { data, error } = await supabase.storage
       .from('question-images')
-      .list('', { limit: 10000 });
+      .list('', { limit, offset });
 
-    let totalBytes = 0;
-    if (files) {
-      for (const f of files) {
-        totalBytes += f.metadata?.size ?? 0;
-      }
+    if (error || !data) break;
+    for (const file of data) {
+      totalBytes += file.metadata?.size ?? 0;
     }
-
-    return NextResponse.json({ usedMB: totalBytes / (1024 * 1024) });
-  } catch {
-    return NextResponse.json({ usedMB: 0 });
+    if (data.length < limit) break;
+    offset += limit;
   }
+
+  const usedMB = totalBytes / (1024 * 1024);
+  return NextResponse.json({ usedMB: parseFloat(usedMB.toFixed(2)) });
 }
