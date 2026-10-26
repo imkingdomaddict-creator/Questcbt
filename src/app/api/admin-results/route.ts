@@ -15,6 +15,7 @@ function isAdmin() {
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
+// DELETE /api/admin-results
 export async function DELETE(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, ids } = await req.json();
@@ -23,7 +24,7 @@ export async function DELETE(req: NextRequest) {
   if (ids && Array.isArray(ids)) {
     const { error } = await supabase.from('results').delete().in('id', ids);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, count: ids.length });
+    return NextResponse.json({ ok: true });
   }
 
   if (id) {
