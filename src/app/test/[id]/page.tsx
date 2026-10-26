@@ -21,6 +21,7 @@ interface TestData {
   test_type: string;
   duration_minutes: number;
   total_questions: number;
+  total_marks?: number;
   end_time?: string;
 }
 
@@ -101,13 +102,17 @@ export default function TestPage() {
     const td = testData;
     if (!sd || !td || questions.length === 0) return;
 
-    let score = 0;
+    let correctCount = 0;
     questions.forEach((q: Question, idx: number) => {
-      if (answers[idx] === q.correct_option) score++;
+      if (answers[idx] === q.correct_option) correctCount++;
     });
 
-    const total = questions.length;
-    const percentage = Math.round((score / total) * 100);
+    // Use total_marks if set, else fall back to questions count
+    const totalMarks = (td as any).total_marks || questions.length;
+    const markPerQ = totalMarks / questions.length;
+    const score = Math.round(correctCount * markPerQ);
+    const total = totalMarks;
+    const percentage = Math.round((correctCount / questions.length) * 100);
 
     const { data, error } = await supabase
       .from('results')
@@ -208,23 +213,34 @@ export default function TestPage() {
   // ── Anti-cheat: tab/focus ──────────────────────────────────────────────
   useEffect(() => {
     if (loading || showStartWarning) return;
-    function handleVisibilityChange() {
-      if (document.hidden) {
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function recordLeave() {
+      // Debounce: both visibilitychange + blur can fire together on mobile.
+      // Only count ONE warning per leave event, regardless of how many fire.
+      if (leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
         warningCountRef.current += 1;
-        if (warningCountRef.current >= 2) handleSubmit(true);
-        else setShowWarning(true);
-      }
+        if (warningCountRef.current >= 2) {
+          handleSubmit(true);
+        } else {
+          setShowWarning(true);
+        }
+      }, 200);
+    }
+
+    function handleVisibilityChange() {
+      if (document.hidden) recordLeave();
     }
     function handleBlur() {
-      if (!document.hidden) {
-        warningCountRef.current += 1;
-        if (warningCountRef.current >= 2) handleSubmit(true);
-        else setShowWarning(true);
-      }
+      if (!document.hidden) recordLeave();
     }
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
     return () => {
+      if (leaveTimer) clearTimeout(leaveTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
     };
@@ -390,7 +406,16 @@ export default function TestPage() {
       {/* Top bar */}
       <div className="bg-quest-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
-          <p className="font-bold text-sm">{testData?.title}</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="font-bold text-sm">{testData?.title}</p>
+            {testData?.test_type && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                testData.test_type.toLowerCase().includes('exam')
+                  ? 'bg-orange-400 text-white'
+                  : 'bg-blue-400 text-white'
+              }`}>{testData.test_type}</span>
+            )}
+          </div>
           <p className="text-xs text-blue-200">{studentData?.full_name} &mdash; {studentData?.reg_no}</p>
         </div>
         <div className={`font-mono text-xl font-bold px-3 py-1 rounded-lg ${isTimeLow ? 'bg-red-500 animate-pulse' : 'bg-quest-blue'}`}>
@@ -412,9 +437,18 @@ export default function TestPage() {
         {/* Question card with flag button */}
         <div className={`card mb-5 ${isFlagged ? 'border-2 border-amber-400' : ''}`}>
           <div className="flex items-start justify-between gap-3">
-            <p className="text-quest-navy font-semibold text-base leading-relaxed flex-1">
-              {current + 1}. {q.question_text}
-            </p>
+            <div className="flex-1">
+              <p className="text-quest-navy font-semibold text-base leading-relaxed">
+                {current + 1}. {q.question_text}
+              </p>
+              {q.image_url && (
+                <img
+                  src={q.image_url}
+                  alt={`Question ${current + 1} diagram`}
+                  className="mt-3 max-w-full rounded-lg border border-blue-100 max-h-64 object-contain"
+                />
+              )}
+            </div>
             <button
               onClick={() => toggleFlag(current)}
               title={isFlagged ? 'Remove flag' : 'Flag for review'}
