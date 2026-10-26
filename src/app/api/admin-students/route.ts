@@ -15,6 +15,7 @@ function isAdmin() {
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
+// POST /api/admin-students  — upsert students from Excel parse
 export async function POST(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { students } = await req.json();
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ count: students.length });
 }
 
+// DELETE /api/admin-students  — delete one or all in class
 export async function DELETE(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id, reg_no, class_id } = await req.json();
