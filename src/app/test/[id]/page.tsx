@@ -406,7 +406,7 @@ export default function TestPage() {
     );
   }
 
-  const q = questions[current];
+  const q = questions[current] as Question & { image_url?: string | null };
   const optionMap: Record<string, string> = {
     A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d,
   };
