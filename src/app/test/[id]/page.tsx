@@ -31,6 +31,7 @@ export default function TestPage() {
   const testId = params.id as string;
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [optionOrders, setOptionOrders] = useState<Record<number, string[]>>({});
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
@@ -173,6 +174,24 @@ export default function TestPage() {
     if (remaining === 0) { setExpired(true); setLoading(false); return; }
 
     async function loadQuestions() {
+      // ── Session lock check: block if another device is active ───────────
+      const myToken = sessionStorage.getItem('quest_session_token');
+      if (myToken) {
+        const twoMinsAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { data: existingSession } = await supabase
+          .from('sessions').select('*')
+          .eq('test_id', td.id).eq('reg_no', sd.reg_no).single();
+        if (existingSession) {
+          const isRecent = new Date(existingSession.last_seen) > new Date(twoMinsAgo);
+          const isSame = existingSession.session_token === myToken;
+          if (isRecent && !isSame) {
+            alert('⚠️ This test is already open on another device. Only one device is allowed at a time.');
+            router.push('/');
+            return;
+          }
+        }
+      }
+
       const { data: draft } = await supabase
         .from('drafts').select('*')
         .eq('test_id', td.id).eq('reg_no', sd.reg_no).single();
@@ -201,6 +220,21 @@ export default function TestPage() {
 
       questionIdsRef.current = shuffled.map((q: Question) => q.id);
       setQuestions(shuffled);
+
+      // Randomize option order per question if test has randomize_options set
+      if ((td as any).randomize_options) {
+        const orders: Record<number, string[]> = {};
+        shuffled.forEach((_: Question, idx: number) => {
+          const keys = ['A', 'B', 'C', 'D'];
+          for (let i = keys.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [keys[i], keys[j]] = [keys[j], keys[i]];
+          }
+          orders[idx] = keys;
+        });
+        setOptionOrders(orders);
+      }
+
       setTimeLeft(remaining);
       if (remaining <= 60) timeWarningShown.current = true;
       setShowStartWarning(true); // FIX: only show after successful authenticated load
@@ -267,6 +301,7 @@ export default function TestPage() {
         if (prev === 60 && !timeWarningShown.current) {
           timeWarningShown.current = true;
           setShowTimeWarning(true);
+          playBeep();
         }
         if (prev <= 1) { clearInterval(interval); handleSubmit(true); return 0; }
         return prev - 1;
@@ -284,6 +319,22 @@ export default function TestPage() {
     }, 1500);
     return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current); };
   }, [answers, flagged, studentData, testData, saveDraft]);
+
+  // ── Beep sound via Web Audio API ──────────────────────────────────────
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.6, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.8);
+    } catch {}
+  }
 
   function formatTime(secs: number): string {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -356,12 +407,11 @@ export default function TestPage() {
   }
 
   const q = questions[current];
-  const options = [
-    { key: 'A', text: q.option_a },
-    { key: 'B', text: q.option_b },
-    { key: 'C', text: q.option_c },
-    { key: 'D', text: q.option_d },
-  ];
+  const optionMap: Record<string, string> = {
+    A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d,
+  };
+  const optionOrder = optionOrders[current] ?? ['A', 'B', 'C', 'D'];
+  const options = optionOrder.map(key => ({ key, text: optionMap[key] }));
   const answeredCount = Object.keys(answers).length;
   const flaggedCount = flagged.size;
   const isTimeLow = timeLeft <= 60;
