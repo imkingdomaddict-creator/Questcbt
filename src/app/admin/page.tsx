@@ -1126,7 +1126,7 @@ function ResultsTab() {
     return true;
   });
 
-  const testTypes = Array.from(new Set(filtered.map(r => r.test_type))).sort();
+  const testTypes: string[] = Array.from(new Set(filtered.map(r => r.test_type))).sort();
 
   const broadMap: Record<string, BroadRow> = {};
   filtered.forEach(r => {
