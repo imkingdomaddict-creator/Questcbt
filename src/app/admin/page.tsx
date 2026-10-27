@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import type { ClassRecord, Subject, Student, Test, Result, Question } from '@/lib/supabase';
+import type { ClassRecord, Subject, Student, Test, Result } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -482,6 +482,19 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [previewBank, setPreviewBank] = useState<{ classId: string; subjectId: string; className: string; subjectName: string } | null>(null);
+  const [previewQuestions, setPreviewQuestions] = useState<any[]>([]);
+  const [previewCurrent, setPreviewCurrent] = useState(0);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  async function openPreview(classId: string, subjectId: string, className: string, subjectName: string) {
+    setPreviewLoading(true);
+    setPreviewBank({ classId, subjectId, className, subjectName });
+    setPreviewCurrent(0);
+    const { data } = await supabase.from('questions').select('*').eq('class_id', classId).eq('subject_id', subjectId).order('created_at');
+    setPreviewQuestions(data ?? []);
+    setPreviewLoading(false);
+  }
 
   // Questions in editor
   const [questions, setQuestions] = useState<EditableQuestion[]>([]);
@@ -755,7 +768,10 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
                   <td className="px-3 py-2">{c.subject_name}</td>
                   <td className="px-3 py-2 text-right font-semibold">{c.count}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => deleteBank(c.class_id, c.subject_id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete Bank</button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openPreview(c.class_id, c.subject_id, c.class_name, c.subject_name)} className="text-quest-blue hover:text-blue-700 text-xs font-medium">👁 Preview</button>
+                      <button onClick={() => deleteBank(c.class_id, c.subject_id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete Bank</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -764,6 +780,80 @@ function QuestionsTab({ onStorageChange }: { onStorageChange: () => void }) {
           </table>
         </div>
       </div>
+
+      {/* Question Preview Modal */}
+      {previewBank && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4 py-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-blue-100">
+              <div>
+                <p className="font-bold text-quest-navy text-sm">{previewBank.className} — {previewBank.subjectName}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Question Preview (as students see it)</p>
+              </div>
+              <button onClick={() => setPreviewBank(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none">✕</button>
+            </div>
+
+            {previewLoading ? (
+              <div className="flex-1 flex items-center justify-center text-gray-400 py-12">Loading questions...</div>
+            ) : previewQuestions.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-gray-400 py-12">No questions found.</div>
+            ) : (
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                {/* Navigator */}
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {previewQuestions.map((_: any, idx: number) => (
+                    <button key={idx} onClick={() => setPreviewCurrent(idx)}
+                      className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${idx === previewCurrent ? 'bg-quest-navy text-white' : 'bg-blue-50 text-gray-500 hover:bg-blue-100'}`}>
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Question */}
+                {(() => {
+                  const pq = previewQuestions[previewCurrent];
+                  return (
+                    <div>
+                      <p className="text-sm font-semibold text-quest-navy mb-3 leading-relaxed">
+                        {previewCurrent + 1}. {pq.question_text}
+                      </p>
+                      {pq.image_url && (
+                        <img src={pq.image_url} alt="question diagram" className="mb-3 max-h-48 rounded-lg border border-blue-100 object-contain" />
+                      )}
+                      <div className="space-y-2">
+                        {(['A','B','C','D'] as const).map(key => {
+                          const text = pq[`option_${key.toLowerCase()}`];
+                          if (!text) return null;
+                          const isCorrect = pq.correct_option === key;
+                          return (
+                            <div key={key} className={`flex items-start gap-3 px-4 py-3 rounded-xl border-2 text-sm ${isCorrect ? 'border-green-400 bg-green-50' : 'border-blue-100 bg-white'}`}>
+                              <span className={`flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${isCorrect ? 'bg-green-500 text-white' : 'bg-quest-light text-quest-navy'}`}>{key}</span>
+                              <span className={isCorrect ? 'text-green-800 font-medium' : 'text-gray-700'}>{text}</span>
+                              {isCorrect && <span className="ml-auto text-green-500 text-xs font-bold flex-shrink-0">✓ Answer</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Footer nav */}
+            {!previewLoading && previewQuestions.length > 0 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-blue-50">
+                <button onClick={() => setPreviewCurrent(p => Math.max(0, p - 1))} disabled={previewCurrent === 0}
+                  className="btn-secondary text-xs px-4 py-2 disabled:opacity-40">← Prev</button>
+                <span className="text-xs text-gray-400">{previewCurrent + 1} / {previewQuestions.length}</span>
+                <button onClick={() => setPreviewCurrent(p => Math.min(previewQuestions.length - 1, p + 1))} disabled={previewCurrent === previewQuestions.length - 1}
+                  className="btn-primary text-xs px-4 py-2 disabled:opacity-40">Next →</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -780,7 +870,7 @@ function TestsTab() {
   const emptyForm = {
     title: '', class_id: '', subject_id: '', test_type: 'CA 1',
     duration_minutes: 30, total_questions: 20, total_marks: 20,
-    start_time: '', end_time: '', test_code: '',
+    start_time: '', end_time: '', test_code: '', randomize_options: false,
   };
   const [form, setForm] = useState(emptyForm);
 
@@ -806,6 +896,7 @@ function TestsTab() {
       start_time: t.start_time ? t.start_time.slice(0, 16) : '',
       end_time: t.end_time ? t.end_time.slice(0, 16) : '',
       test_code: (t as any).test_code ?? '',
+      randomize_options: (t as any).randomize_options ?? false,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -925,6 +1016,19 @@ function TestsTab() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
             <input type="datetime-local" className="input" value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={(form as any).randomize_options ?? false}
+                onChange={e => setForm({ ...form, randomize_options: e.target.checked } as any)}
+                className="w-4 h-4 accent-quest-blue"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                🔀 Randomize option order (A/B/C/D shuffled differently for each student)
+              </span>
+            </label>
           </div>
           <div className="sm:col-span-2 flex gap-3">
             <button type="submit" className="btn-primary">{editingTest ? 'Save Changes' : 'Create Test'}</button>
