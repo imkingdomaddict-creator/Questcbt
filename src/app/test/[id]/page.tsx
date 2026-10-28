@@ -50,6 +50,7 @@ export default function TestPage() {
   const submitted = useRef(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questionIdsRef = useRef<string[]>([]);
+  const handleSubmitRef = useRef<(forced: boolean) => void>(() => {});
 
   // ── Ping session every 30s ─────────────────────────────────────────────
   const pingSession = useCallback(async (sd: StudentData, td: TestData) => {
@@ -244,20 +245,25 @@ export default function TestPage() {
     loadQuestions();
   }, [router]);
 
+  // Keep ref in sync so anti-cheat never holds a stale handleSubmit closure
+  useEffect(() => { handleSubmitRef.current = handleSubmit; }, [handleSubmit]);
+
   // ── Anti-cheat: tab/focus ──────────────────────────────────────────────
+  // leaveTimer lives OUTSIDE the effect via a ref so it survives re-renders
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (loading || showStartWarning) return;
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     function recordLeave() {
-      // Debounce: both visibilitychange + blur can fire together on mobile.
-      // Only count ONE warning per leave event, regardless of how many fire.
-      if (leaveTimer) return;
-      leaveTimer = setTimeout(() => {
-        leaveTimer = null;
+      // Debounce: both visibilitychange + blur fire together on mobile.
+      // Only count ONE warning per leave event.
+      if (leaveTimerRef.current) return;
+      leaveTimerRef.current = setTimeout(() => {
+        leaveTimerRef.current = null;
         warningCountRef.current += 1;
         if (warningCountRef.current >= 2) {
-          handleSubmit(true);
+          handleSubmitRef.current(true);
         } else {
           setShowWarning(true);
         }
@@ -274,11 +280,10 @@ export default function TestPage() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
     return () => {
-      if (leaveTimer) clearTimeout(leaveTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [loading, showStartWarning, handleSubmit]);
+  }, [loading, showStartWarning]);
 
   // ── Anti-cheat: block right-click/copy/paste ───────────────────────────
   useEffect(() => {
