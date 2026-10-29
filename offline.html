@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quest CBT – Offline</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #f0f4ff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 24px;
+      text-align: center;
+    }
+    .icon {
+      width: 72px; height: 72px;
+      background: #0a1946;
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .icon span { color: white; font-size: 36px; font-weight: bold; }
+    h1 { color: #0a1946; font-size: 22px; margin-bottom: 10px; }
+    p { color: #6b7280; font-size: 15px; line-height: 1.6; max-width: 320px; }
+    button {
+      margin-top: 24px;
+      background: #0a1946; color: white;
+      border: none; border-radius: 10px;
+      padding: 12px 28px; font-size: 15px;
+      cursor: pointer;
+    }
+    button:active { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div class="icon"><span>Q</span></div>
+  <h1>You're offline</h1>
+  <p>Quest CBT needs an internet connection to load tests and save results. Please reconnect and try again.</p>
+  <button onclick="location.reload()">Try again</button>
+</body>
+</html>
