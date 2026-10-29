@@ -1,7 +1,17 @@
 /** @type {import('next').NextConfig} */
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline.html',
+  },
+  buildExcludes: [/middleware-manifest\.json$/],
+});
+
 const nextConfig = {
   reactStrictMode: true,
-  // Allow images from Supabase storage
   images: {
     remotePatterns: [
       {
@@ -13,4 +23,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withPWA(nextConfig);
