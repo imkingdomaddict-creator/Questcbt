@@ -262,6 +262,12 @@ function StudentsTab() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Manual add state
+  const [manualStudent, setManualStudent] = useState({ reg_no: '', full_name: '', class_id: '' });
+  const [manualStudentError, setManualStudentError] = useState('');
+  const [manualStudentSuccess, setManualStudentSuccess] = useState('');
+  const [addingStudent, setAddingStudent] = useState(false);
+
   async function load() {
     const { data: cd } = await supabase.from('classes').select('*').order('name');
     if (cd) setClasses(cd as ClassRecord[]);
@@ -271,6 +277,36 @@ function StudentsTab() {
   useEffect(() => { load(); }, []);
 
   function getClassName(id: string) { return classes.find(cl => cl.id === id)?.name ?? id; }
+
+  async function handleManualAddStudent(e: React.FormEvent) {
+    e.preventDefault();
+    setManualStudentError('');
+    setManualStudentSuccess('');
+    if (!manualStudent.reg_no.trim() || !manualStudent.full_name.trim() || !manualStudent.class_id) {
+      setManualStudentError('All fields are required.');
+      return;
+    }
+    setAddingStudent(true);
+    try {
+      const res = await fetch('/api/admin-students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualStudent),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManualStudentError(data.error || 'Failed to add student');
+      } else {
+        setManualStudentSuccess(`${manualStudent.full_name} added successfully!`);
+        setManualStudent({ reg_no: '', full_name: '', class_id: '' });
+        load();
+      }
+    } catch {
+      setManualStudentError('Network error. Please try again.');
+    } finally {
+      setAddingStudent(false);
+    }
+  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -336,6 +372,49 @@ function StudentsTab() {
       <SectionTitle>Students</SectionTitle>
       <Alert type="success" msg={msg} />
       <Alert type="error" msg={err} />
+
+      {/* ── Manual Add Student ── */}
+      <div className="bg-blue-50 rounded-xl border border-blue-200 p-5 mb-6">
+        <h3 className="font-semibold text-quest-navy mb-4">Add Single Student</h3>
+        <form onSubmit={handleManualAddStudent} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input
+              type="text"
+              placeholder="Reg No (e.g. QST/001)"
+              value={manualStudent.reg_no}
+              onChange={e => setManualStudent(s => ({ ...s, reg_no: e.target.value }))}
+              className="input text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Full Name"
+              value={manualStudent.full_name}
+              onChange={e => setManualStudent(s => ({ ...s, full_name: e.target.value }))}
+              className="input text-sm"
+            />
+            <select
+              value={manualStudent.class_id}
+              onChange={e => setManualStudent(s => ({ ...s, class_id: e.target.value }))}
+              className="input text-sm"
+            >
+              <option value="">Select Class</option>
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {manualStudentError && <p className="text-red-600 text-sm">{manualStudentError}</p>}
+          {manualStudentSuccess && <p className="text-green-600 text-sm">{manualStudentSuccess}</p>}
+          <button
+            type="submit"
+            disabled={addingStudent}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            {addingStudent ? 'Adding...' : '+ Add Student'}
+          </button>
+        </form>
+      </div>
+
       <div className="flex flex-wrap gap-3 mb-5">
         <label className="btn-secondary cursor-pointer">
           {uploading ? 'Uploading...' : 'Upload Excel'}
