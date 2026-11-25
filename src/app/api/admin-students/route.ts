@@ -15,42 +15,78 @@ function isAdmin() {
   return cookieStore.get('admin_auth')?.value === 'true';
 }
 
-// POST /api/admin-students  — upsert students from Excel parse
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { students } = await req.json();
-  if (!Array.isArray(students) || students.length === 0)
-    return NextResponse.json({ error: 'No students provided' }, { status: 400 });
-
   const supabase = getServiceClient();
-  const { error } = await supabase.from('students').upsert(students, { onConflict: 'reg_no' });
+  const { searchParams } = new URL(req.url);
+  const classId = searchParams.get('class_id');
+  let query = supabase.from('students').select('*, classes(name)').order('full_name');
+  if (classId) query = query.eq('class_id', classId);
+  const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ count: students.length });
+  return NextResponse.json({ students: data });
 }
 
-// DELETE /api/admin-students  — delete one or all in class
+export async function POST(req: NextRequest) {
+  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const supabase = getServiceClient();
+  const contentType = req.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const body = await req.json();
+
+    // Bulk JSON array (from client-side Excel parse)
+    if (Array.isArray(body.students)) {
+      const { error } = await supabase
+        .from('students')
+        .upsert(body.students, { onConflict: 'reg_no', ignoreDuplicates: true });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, count: body.students.length });
+    }
+
+    // Single student manual add
+    const { reg_no, full_name, class_id } = body;
+    if (!reg_no?.trim() || !full_name?.trim() || !class_id) {
+      return NextResponse.json({ error: 'reg_no, full_name and class_id are required' }, { status: 400 });
+    }
+    const { error } = await supabase.from('students').insert({
+      reg_no: reg_no.trim().toUpperCase(),
+      full_name: full_name.trim(),
+      class_id,
+    });
+    if (error) {
+      if (error.code === '23505') {
+        return NextResponse.json(
+          { error: `Registration number "${reg_no.trim().toUpperCase()}" already exists` },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, message: 'Student added successfully' });
+  }
+
+  return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
+}
+
 export async function DELETE(req: NextRequest) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { id, reg_no, class_id } = await req.json();
   const supabase = getServiceClient();
+  const body = await req.json();
 
-  if (class_id) {
-    const { data: students } = await supabase.from('students').select('reg_no').eq('class_id', class_id);
-    if (students && students.length > 0) {
-      const regNos = students.map((s: any) => s.reg_no);
-      await supabase.from('results').delete().in('reg_no', regNos);
-    }
-    const { error } = await supabase.from('students').delete().eq('class_id', class_id);
+  // Delete all students in a class
+  if (body.class_id) {
+    const { error } = await supabase.from('students').delete().eq('class_id', body.class_id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ success: true });
   }
 
-  if (id && reg_no) {
-    await supabase.from('results').delete().eq('reg_no', reg_no);
-    const { error } = await supabase.from('students').delete().eq('id', id);
+  // Delete single student by id
+  if (body.id) {
+    const { error } = await supabase.from('students').delete().eq('id', body.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ success: true });
   }
 
-  return NextResponse.json({ error: 'id+reg_no or class_id required' }, { status: 400 });
+  return NextResponse.json({ error: 'Missing id or class_id' }, { status: 400 });
 }
