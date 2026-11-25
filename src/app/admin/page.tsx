@@ -92,13 +92,13 @@ export default function AdminPage() {
 
   useEffect(() => { refreshStorage(); }, []);
 
-  const tabs = ['Classes & Subjects', 'Students', 'Questions', 'Tests', 'Results'];
+  const tabs = ['Classes & Subjects', 'Students', 'Questions', 'Tests', 'Results', 'Settings'];
 
   return (
     <div className="min-h-screen bg-quest-light">
       <div className="bg-quest-navy text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-quest-accent rounded-lg flex items-center justify-center">
+          <div className="w-9 h-9 bg-quest-accent rounded-lg flex items-center justify-center overflow-hidden">
             <span className="text-quest-navy font-extrabold text-lg">Q</span>
           </div>
           <div>
@@ -148,6 +148,90 @@ export default function AdminPage() {
         {tab === 2 && <QuestionsTab onStorageChange={refreshStorage} />}
         {tab === 3 && <TestsTab />}
         {tab === 4 && <ResultsTab />}
+        {tab === 5 && <SettingsTab />}
+      </div>
+    </div>
+  );
+}
+
+// ── Settings Tab ───────────────────────────────────────────────────────────
+function SettingsTab() {
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function loadLogo() {
+    const res = await fetch('/api/admin-logo');
+    const data = await res.json();
+    setLogoUrl(data.url || null);
+  }
+  useEffect(() => { loadLogo(); }, []);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setErr(''); setMsg('');
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/admin-logo', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) { setErr(data.error || 'Upload failed'); }
+    else { setMsg('Logo uploaded successfully!'); setLogoUrl(data.url + '?t=' + Date.now()); }
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  async function handleRemove() {
+    if (!confirm('Remove the school logo? Pages will fall back to the Q icon.')) return;
+    setRemoving(true); setErr(''); setMsg('');
+    const res = await fetch('/api/admin-logo', { method: 'DELETE' });
+    if (!res.ok) { setErr('Failed to remove logo'); }
+    else { setMsg('Logo removed.'); setLogoUrl(null); }
+    setRemoving(false);
+  }
+
+  return (
+    <div className="max-w-lg">
+      <div className="card">
+        <SectionTitle>School Logo</SectionTitle>
+        <Alert type="success" msg={msg} />
+        <Alert type="error" msg={err} />
+        <p className="text-sm text-gray-500 mb-5">
+          Upload your school logo to appear on the student login page, test page, and result page.
+          Recommended: PNG or JPG, square or landscape, max 2MB.
+        </p>
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Current Logo</p>
+          <div className="w-40 h-20 border-2 border-dashed border-blue-200 rounded-xl flex items-center justify-center bg-blue-50 overflow-hidden">
+            {logoUrl ? (
+              <img src={logoUrl} alt="School logo" className="max-w-full max-h-full object-contain p-2" />
+            ) : (
+              <div className="text-center">
+                <div className="w-10 h-10 bg-quest-navy rounded-lg flex items-center justify-center mx-auto mb-1">
+                  <span className="text-white font-extrabold text-xl">Q</span>
+                </div>
+                <p className="text-xs text-gray-400">Default icon</p>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <label className="btn-primary cursor-pointer text-sm">
+            {uploading ? 'Uploading...' : logoUrl ? '🔄 Replace Logo' : '📤 Upload Logo'}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+          {logoUrl && (
+            <button onClick={handleRemove} disabled={removing} className="btn-secondary text-red-600 border-red-200 bg-red-50 text-sm">
+              {removing ? 'Removing...' : '🗑 Remove Logo'}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-4">
+          Changes take effect immediately on all pages. No need to redeploy.
+        </p>
       </div>
     </div>
   );
