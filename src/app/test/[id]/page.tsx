@@ -44,6 +44,7 @@ export default function TestPage() {
   const [showStartWarning, setShowStartWarning] = useState(false); // FIX: false, set true after load
   const [showTimeWarning, setShowTimeWarning] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const timeWarningShown = useRef(false);
   const warningCountRef = useRef(0);
@@ -51,6 +52,14 @@ export default function TestPage() {
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questionIdsRef = useRef<string[]>([]);
   const handleSubmitRef = useRef<(forced: boolean) => void>(() => {});
+
+  // ── Fetch logo ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/admin-logo')
+      .then(r => r.json())
+      .then(d => { if (d.url) setLogoUrl(d.url); })
+      .catch(() => {});
+  }, []);
 
   // ── Ping session every 30s ─────────────────────────────────────────────
   const pingSession = useCallback(async (sd: StudentData, td: TestData) => {
@@ -460,18 +469,28 @@ export default function TestPage() {
 
       {/* Top bar */}
       <div className="bg-quest-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <p className="font-bold text-sm">{testData?.title}</p>
-            {testData?.test_type && (
-              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                testData.test_type.toLowerCase().includes('exam')
-                  ? 'bg-orange-400 text-white'
-                  : 'bg-blue-400 text-white'
-              }`}>{testData.test_type}</span>
+        <div className="flex items-center gap-3">
+          {/* School logo */}
+          <div className="w-8 h-8 rounded-lg overflow-hidden bg-quest-accent flex items-center justify-center flex-shrink-0">
+            {logoUrl ? (
+              <img src={logoUrl} alt="School logo" className="w-full h-full object-contain p-0.5" />
+            ) : (
+              <span className="text-quest-navy font-extrabold text-sm">Q</span>
             )}
           </div>
-          <p className="text-xs text-blue-200">{studentData?.full_name} &mdash; {studentData?.reg_no}</p>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <p className="font-bold text-sm">{testData?.title}</p>
+              {testData?.test_type && (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                  testData.test_type.toLowerCase().includes('exam')
+                    ? 'bg-orange-400 text-white'
+                    : 'bg-blue-400 text-white'
+                }`}>{testData.test_type}</span>
+              )}
+            </div>
+            <p className="text-xs text-blue-200">{studentData?.full_name} &mdash; {studentData?.reg_no}</p>
+          </div>
         </div>
         <div className={`font-mono text-xl font-bold px-3 py-1 rounded-lg ${isTimeLow ? 'bg-red-500 animate-pulse' : 'bg-quest-blue'}`}>
           {formatTime(timeLeft)}
