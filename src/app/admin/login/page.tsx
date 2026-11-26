@@ -1,10 +1,18 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function AdminLogin() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/admin-logo')
+      .then(r => r.json())
+      .then(d => { if (d.url) setLogoUrl(d.url); })
+      .catch(() => {})
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -29,8 +37,14 @@ export default function AdminLogin() {
     <div className="min-h-screen bg-quest-light flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-quest-navy rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-2xl font-black">Q</span>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden border-2 border-quest-navy" style={{ background: logoUrl ? '#fff' : undefined }}>
+            {logoUrl ? (
+              <img src={logoUrl} alt="School logo" className="w-full h-full object-contain" />
+            ) : (
+              <div className="w-full h-full bg-quest-navy flex items-center justify-center">
+                <span className="text-white text-2xl font-black">Q</span>
+              </div>
+            )}
           </div>
           <h1 className="text-2xl font-black text-quest-navy">Admin Login</h1>
           <p className="text-gray-500 text-sm mt-1">Quest CBT Dashboard</p>
