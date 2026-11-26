@@ -179,11 +179,13 @@ export default function StudentLoginPage() {
   return (
     <div className="min-h-screen bg-quest-light flex flex-col items-center justify-center px-4 py-10">
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-quest-navy rounded-2xl mb-4 overflow-hidden">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 overflow-hidden border-2 border-quest-navy" style={{ background: logoUrl ? '#fff' : undefined }}>
           {logoUrl ? (
-            <img src={logoUrl} alt="School logo" className="w-full h-full object-contain p-1" />
+            <img src={logoUrl} alt="School logo" className="w-full h-full object-contain" />
           ) : (
-            <span className="text-white text-2xl font-bold">Q</span>
+            <div className="w-full h-full bg-quest-navy flex items-center justify-center">
+              <span className="text-white text-2xl font-bold">Q</span>
+            </div>
           )}
         </div>
         <h1 className="text-3xl font-bold text-quest-navy">Quest College CBT</h1>
