@@ -8,6 +8,7 @@ export default function ResultPage() {
   const router = useRouter()
   const [result, setResult] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -16,6 +17,11 @@ export default function ResultPage() {
       setLoading(false)
     }
     load()
+
+    fetch('/api/admin-logo')
+      .then(r => r.json())
+      .then(d => { if (d.url) setLogoUrl(d.url); })
+      .catch(() => {})
   }, [params.id])
 
   if (loading) return (
@@ -36,6 +42,18 @@ export default function ResultPage() {
     <div className="min-h-screen bg-quest-light flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="card text-center">
+
+          {/* School logo */}
+          <div className="flex justify-center mb-5">
+            <div className="w-14 h-14 rounded-2xl overflow-hidden bg-quest-navy flex items-center justify-center">
+              {logoUrl ? (
+                <img src={logoUrl} alt="School logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <span className="text-white text-xl font-extrabold">Q</span>
+              )}
+            </div>
+          </div>
+
           <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 ${passed ? 'bg-green-100' : 'bg-red-100'}`}>
             <span className={`text-3xl font-black ${passed ? 'text-green-600' : 'text-red-600'}`}>
               {result.percentage}%
